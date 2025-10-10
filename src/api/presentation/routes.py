@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
@@ -8,6 +10,7 @@ from src.api.application.services import ProgressService, TaskService
 from src.setup.api_config import get_api_settings
 
 router = APIRouter(tags=["tasks"])
+logger = logging.getLogger(__name__)
 
 # Instantiate services once (simple DI)
 _settings = get_api_settings()
@@ -36,7 +39,8 @@ def calculate_pi(n: int = Query(..., ge=1, le=_settings.MAX_DIGITS,description="
     try:
         task_id = _task_service.push_task("compute_pi", {"digits": n})
         return EnqueueResponse(task_id=task_id)
-    except Exception:
+    except Exception as exc:
+        logger.exception("Failed to enqueue task compute_pi: %s", exc)
         raise HTTPException(status_code=500)  # noqa: B904
 
 
@@ -65,5 +69,6 @@ def check_progress(task_id: str = Query(..., description="Celery task id")):
     try:
         status = _progress_service.get_progress(task_id)
         return status
-    except Exception:
+    except Exception as exc:
+        logger.exception("Failed to get progress for task %s: %s", task_id, exc)
         raise HTTPException(status_code=500)  # noqa: B904

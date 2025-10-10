@@ -1,10 +1,9 @@
-# src/worker/compute_pi_task.py
-from __future__ import annotations
-
 import time
+
+from mpmath import mp
+
 from src.api.infrastructure.celery.app import celery_app
 from src.setup.worker_config import get_worker_settings
-from mpmath import mp
 
 _settings = get_worker_settings()
 

@@ -1,6 +1,5 @@
 from fastapi import FastAPI
 
-from src.api.presentation.routes import router as api_router
 from src.setup.api_config import configure_di, get_api_settings
 
 # Configure DI once at process start
@@ -13,6 +12,7 @@ app = FastAPI(
     description="Async task API (compute π) with progress polling",
 )
 
-# If you import and instantiate services here, do it AFTER configure_di()
+# Instantiate services AFTER configure_di()
+from src.api.presentation.routes import router as api_router  # noqa: E402
 
 app.include_router(api_router, prefix="")

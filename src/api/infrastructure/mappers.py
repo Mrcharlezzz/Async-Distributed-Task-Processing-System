@@ -4,12 +4,12 @@ from pydantic import ValidationError
 from src.api.domain.models import StatusDTO
 
 
-def to_status_dto(result : AsyncResult) -> StatusDTO:
-    info = result.info or {}
+def to_status_dto(async_result : AsyncResult) -> StatusDTO:
+    info = async_result.info or {}
     try:
-        if result.failed():
+        if async_result.failed():
             return StatusDTO(
-                task_id=result.id,
+                task_id=async_result.id,
                 state="FAILURE",
                 progress=None,
                 message=info.get("message"),
@@ -17,17 +17,17 @@ def to_status_dto(result : AsyncResult) -> StatusDTO:
             )
 
         return StatusDTO(
-            task_id=result.id,
-            state=result.state,
+            task_id=async_result.id,
+            state=async_result.state,
             progress=info.get("progress"),
             message=info.get("message"),
-            result=result.result if result.successful() else None,
+            result = async_result.result["result"]
         )
 
     except ValidationError as e:
         # fallback: mark as failure with error message
         return StatusDTO(
-            task_id=result.id,
+            task_id=async_result.id,
             state="FAILURE",
             progress=None,
             message=f"Mapping error: {e.errors()}",
