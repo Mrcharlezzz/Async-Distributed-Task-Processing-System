@@ -13,6 +13,8 @@ class ApiSettings(BaseSettings):
 
     class Config:
         env_file = ".env"
+        extra = "ignore"
+        
 
 def get_api_settings() -> ApiSettings:
     return ApiSettings()

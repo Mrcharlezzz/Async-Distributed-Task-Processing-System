@@ -1,8 +1,7 @@
-from __future__ import annotations
 from fastapi import FastAPI
 
-from src.setup.api_config import configure_di, get_api_settings
 from src.api.presentation.routes import router as api_router
+from src.setup.api_config import configure_di, get_api_settings
 
 # Configure DI once at process start
 _settings = get_api_settings()

@@ -6,6 +6,7 @@ class WorkerSettings(BaseSettings):
 
     class Config:
         env_file = ".env"
+        extra = "ignore"
 
 def get_worker_settings() -> WorkerSettings:
     # simple singleton if you want later; minimal now

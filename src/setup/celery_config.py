@@ -6,6 +6,7 @@ class CelerySettings(BaseSettings):
 
     class Config:
         env_file = ".env"
+        extra = "ignore"
 
 def get_celery_settings() -> CelerySettings:
     # simple singleton if you want later; minimal now
