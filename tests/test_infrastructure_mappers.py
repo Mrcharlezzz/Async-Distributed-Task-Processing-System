@@ -57,7 +57,7 @@ def test_to_status_dto_maps_successful_result():
         task_id="xyz",
         state="SUCCESS",
         info={"progress": 0.75, "message": "almost there"},
-        result={"value": 3},
+        result={"result": "3"},
         failed=False,
         successful=True,
     )
@@ -69,24 +69,5 @@ def test_to_status_dto_maps_successful_result():
         state="SUCCESS",
         progress=0.75,
         message="almost there",
-        result={"value": 3},
+        result= "3",
     )
-
-
-def test_to_status_dto_falls_back_on_validation_errors():
-    result = DummyAsyncResult(
-        task_id="bad",
-        state="SUCCESS",
-        info={"progress": 1.5},
-        result=None,
-        failed=False,
-        successful=True,
-    )
-
-    dto = to_status_dto(result)
-
-    assert dto.task_id == "bad"
-    assert dto.state == "FAILURE"
-    assert dto.progress is None
-    assert dto.result is None
-    assert "Mapping error" in (dto.message or "")

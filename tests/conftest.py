@@ -7,6 +7,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from src.api.domain.exceptions import TaskNotFoundError
 from src.api.domain.models import StatusDTO
 from src.api.domain.repositories import TaskManagerRepository
 
@@ -24,6 +25,8 @@ class StubTaskManager(TaskManagerRepository):
         return task_id
 
     def get_status(self, task_id: str) -> StatusDTO:
+        if task_id not in self.status_by_id:
+            raise TaskNotFoundError(task_id)
         return self.status_by_id[task_id]
 
 

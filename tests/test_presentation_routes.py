@@ -58,3 +58,12 @@ def test_check_progress_returns_status_payload(api_client):
         "message": "working",
         "result": None,
     }
+
+
+def test_check_progress_returns_404_for_missing_task(api_client):
+    client, _ = api_client
+
+    response = client.get("/check_progress", params={"task_id": "missing"})
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Task with id 'missing' was not found."
