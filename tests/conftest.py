@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import importlib
-from typing import Callable
+from collections.abc import Callable
 
 import pytest
 from fastapi import FastAPI
@@ -70,7 +70,7 @@ def api_client(env_settings: None, monkeypatch: pytest.MonkeyPatch):
     _patch_inject_instance(monkeypatch, stub)
 
     # Reload modules so module-level singletons pick up the patched injector.
-    services_module = importlib.reload(importlib.import_module("src.api.application.services"))
+    services_module = importlib.reload(importlib.import_module("src.api.application.services"))  # noqa: F841
     routes_module = importlib.reload(importlib.import_module("src.api.presentation.routes"))
 
     app = FastAPI()

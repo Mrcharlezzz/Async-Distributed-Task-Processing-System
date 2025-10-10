@@ -17,7 +17,7 @@ class ApiSettings(BaseSettings):
         
 
 def get_api_settings() -> ApiSettings:
-    return ApiSettings()
+    return ApiSettings() # type: ignore[call-arg]
 
 def _config(binder: inject.Binder) -> None:
     """

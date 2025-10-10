@@ -1,6 +1,7 @@
+import inject
+
 from src.api.domain.models import StatusDTO
 from src.api.domain.repositories import TaskManagerRepository
-import inject
 
 
 class ProgressService:

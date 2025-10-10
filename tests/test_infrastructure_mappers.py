@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import pytest
-
 from src.api.domain.models import StatusDTO
 from src.api.infrastructure.mappers import to_status_dto
 
