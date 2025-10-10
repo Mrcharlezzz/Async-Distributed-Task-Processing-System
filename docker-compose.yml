@@ -41,7 +41,6 @@ services:
     command: >
       celery -A src.api.infrastructure.celery.app:celery_app
       worker -l ${LOG_LEVEL:-INFO} --concurrency=1
-      --include src.worker.compute_pi_task
     restart: unless-stopped
     networks: [posttager_net]
 

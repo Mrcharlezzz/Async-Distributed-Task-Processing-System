@@ -7,6 +7,12 @@ from src.setup.worker_config import get_worker_settings
 
 _settings = get_worker_settings()
 
+celery_app.autodiscover_tasks(
+    packages=["src.worker"],   
+    related_name="tasks",      # looks for src/worker/tasks.py
+    force=True,
+)
+
 def get_pi(digits: int) -> str:
     mp.dps = digits
     return str(mp.pi)
