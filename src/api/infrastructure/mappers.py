@@ -1,11 +1,16 @@
 from celery.result import AsyncResult
 from pydantic import ValidationError
 
+from src.api.domain.exceptions import TaskNotFoundError
 from src.api.domain.models import StatusDTO
 
 
 def to_status_dto(async_result : AsyncResult) -> StatusDTO:
     info = async_result.info or {}
+
+    if async_result.state == "PENDING":
+        raise TaskNotFoundError(async_result.id)
+
     try:
         if async_result.failed():
             return StatusDTO(
@@ -33,3 +38,18 @@ def to_status_dto(async_result : AsyncResult) -> StatusDTO:
             message=f"Mapping error: {e.errors()}",
             result=None,
         )
+
+"""
+TODO
+
+
+implement task missing logic
+
+check not found task
+
+
+check not found task
+
+try to decouple worker import from docker compose
+
+"""
