@@ -68,3 +68,7 @@ ruff_cache/
 scratch/
 sandbox/
 notes.txt
+
+TODO
+.github/git-commit-instructions.md
+.github/copilot-instructions.md

@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from src.api.application.dtos import StatusDTO
-from src.api.infrastructure.mappers import to_status_dto
+from src.api.domain.models.task_progress import TaskProgress
+from src.api.domain.models.task_state import TaskState
+from src.api.domain.models.task_status import TaskStatus
+from src.api.infrastructure.celery.mappers import CeleryMapper
 
 
 class DummyAsyncResult:
@@ -39,14 +41,12 @@ def test_to_status_dto_maps_failure_result():
         successful=False,
     )
 
-    dto = to_status_dto(result)
+    dto = CeleryMapper.map_status(result)
 
-    assert dto == StatusDTO(
-        task_id="abc",
-        state="FAILURE",
-        progress=None,
+    assert dto == TaskStatus(
+        state=TaskState.FAILED,
+        progress=TaskProgress(percentage=0.3),
         message="boom",
-        result=None,
     )
 
 
@@ -60,12 +60,10 @@ def test_to_status_dto_maps_successful_result():
         successful=True,
     )
 
-    dto = to_status_dto(result)
+    dto = CeleryMapper.map_status(result)
 
-    assert dto == StatusDTO(
-        task_id="xyz",
-        state="SUCCESS",
-        progress=0.75,
+    assert dto == TaskStatus(
+        state=TaskState.COMPLETED,
+        progress=TaskProgress(percentage=0.75),
         message="almost there",
-        result= "3",
     )

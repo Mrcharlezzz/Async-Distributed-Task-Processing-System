@@ -42,14 +42,14 @@ Services started:
 
 ## Available Services & Endpoints
 ### API
-- `GET /calculate_pi?n=<digits>` — enqueue π computation
-- `GET /check_progress?task_id=<id>` — retrieve task progress/result
+- `POST /calculate_pi` — enqueue π computation (JSON body: `{"n": <digits>}`)
+- `GET /check_progress?task_id=<id>` — retrieve task progress
 
 ### Worker
 - Task: `compute_pi` defined in `src/worker/tasks.py`
 
 ## Task Workflow
-1. Client calls `/calculate_pi`.
+1. Client calls `POST /calculate_pi` with `{"n": <digits>}`.
 2. API enqueues `compute_pi` via Celery.
 3. Worker updates progress using `update_state` and ultimately stores the result.
 4. Client polls `/check_progress` until `state` is `SUCCESS`.
