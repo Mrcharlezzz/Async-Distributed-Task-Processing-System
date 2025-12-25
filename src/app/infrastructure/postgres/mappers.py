@@ -93,14 +93,14 @@ class OrmMapper:
 
     @staticmethod
     def to_domain_metadata(row: TaskRow) -> TaskMetadata:
-        if row.metadata is None:
+        if row.task_metadata is None:
             return TaskMetadata()
         return TaskMetadata(
-            created_at=row.metadata.created_at,
-            updated_at=row.metadata.updated_at,
-            started_at=row.metadata.started_at,
-            finished_at=row.metadata.finished_at,
-            custom=row.metadata.custom,
+            created_at=row.task_metadata.created_at,
+            updated_at=row.task_metadata.updated_at,
+            started_at=row.task_metadata.started_at,
+            finished_at=row.task_metadata.finished_at,
+            custom=row.task_metadata.custom,
         )
 
     @staticmethod

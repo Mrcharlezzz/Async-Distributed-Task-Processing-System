@@ -38,7 +38,7 @@ class PostgresStorageRepository(StorageRepository):
 
         task_row = OrmMapper.to_task_row(user_id, task)
         task_row.payload = OrmMapper.to_payload_row(task.id, task.payload)
-        task_row.metadata = OrmMapper.to_metadata_row(task.id, task.metadata)
+        task_row.task_metadata = OrmMapper.to_metadata_row(task.id, task.metadata)
         task_row.status = OrmMapper.to_status_row(task.id, task.status)
 
         async with self._orm.session_factory() as session:
@@ -53,7 +53,7 @@ class PostgresStorageRepository(StorageRepository):
                 select(TaskRow)
                 .options(
                     selectinload(TaskRow.payload),
-                    selectinload(TaskRow.metadata),
+                    selectinload(TaskRow.task_metadata),
                     selectinload(TaskRow.status),
                     selectinload(TaskRow.result),
                 )
@@ -75,7 +75,7 @@ class PostgresStorageRepository(StorageRepository):
         async with self._orm.session_factory() as session:
             result = await session.execute(
                 select(TaskRow)
-                .options(selectinload(TaskRow.metadata), selectinload(TaskRow.result))
+                .options(selectinload(TaskRow.task_metadata), selectinload(TaskRow.result))
                 .where(TaskRow.id == task_id)
             )
             task_row = result.scalar_one_or_none()
@@ -97,7 +97,7 @@ class PostgresStorageRepository(StorageRepository):
     ) -> list[TaskView]:
         statement = (
             select(TaskRow)
-            .options(selectinload(TaskRow.metadata), selectinload(TaskRow.status))
+            .options(selectinload(TaskRow.task_metadata), selectinload(TaskRow.status))
             .where(TaskRow.user_id == user_id)
         )
         if task_type is not None:
@@ -130,8 +130,12 @@ class PostgresStorageRepository(StorageRepository):
                 await session.merge(status_row)
 
                 if metadata is not None:
-                    metadata_row = OrmMapper.to_metadata_row(task_id, metadata)
-                    await session.merge(metadata_row)
+                    metadata_row = await session.get(TaskMetadataRow, task_id)
+                    if metadata_row is None:
+                        metadata_row = OrmMapper.to_metadata_row(task_id, metadata)
+                        session.add(metadata_row)
+                    else:
+                        self._merge_metadata(metadata_row, metadata)
 
     async def set_task_result(
         self,
@@ -160,4 +164,11 @@ class PostgresStorageRepository(StorageRepository):
                         )
                         session.add(metadata_row)
                     else:
-                        metadata_row.finished_at = finished_at
+                        self._merge_metadata(metadata_row, TaskMetadata(finished_at=finished_at))
+
+    @staticmethod
+    def _merge_metadata(target: TaskMetadataRow, updates: TaskMetadata) -> None:
+        for field in ("created_at", "updated_at", "started_at", "finished_at", "custom"):
+            value = getattr(updates, field)
+            if value is not None:
+                setattr(target, field, value)

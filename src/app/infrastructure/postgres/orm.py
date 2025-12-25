@@ -31,7 +31,7 @@ class TaskRow(Base):
     payload: Mapped["TaskPayloadRow"] = relationship(
         back_populates="task", uselist=False, cascade="all, delete-orphan"
     )
-    metadata: Mapped["TaskMetadataRow"] = relationship(
+    task_metadata: Mapped["TaskMetadataRow"] = relationship(
         back_populates="task", uselist=False, cascade="all, delete-orphan"
     )
     status: Mapped["TaskStatusRow"] = relationship(
@@ -65,7 +65,7 @@ class TaskMetadataRow(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     custom: Mapped[dict | None] = mapped_column(JSON)
 
-    task: Mapped[TaskRow] = relationship(back_populates="metadata")
+    task: Mapped[TaskRow] = relationship(back_populates="task_metadata")
 
 
 class TaskStatusRow(Base):
