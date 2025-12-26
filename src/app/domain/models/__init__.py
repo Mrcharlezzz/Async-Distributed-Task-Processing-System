@@ -1,4 +1,3 @@
-from src.app.application.dtos import StatusDTO  # Backward compatibility
 from src.app.domain.models.execution_config import ExecutionConfig
 from src.app.domain.models.payloads import ComputePiPayload, DocumentAnalysisPayload, TaskPayload
 from src.app.domain.models.task import Task
@@ -23,5 +22,4 @@ __all__ = [
     "TaskMetadata",
     "TaskResult",
     "TaskView",
-    "StatusDTO",
 ]

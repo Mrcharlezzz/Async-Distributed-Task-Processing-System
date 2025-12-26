@@ -67,7 +67,7 @@ async def test_get_result_returns_persisted_result(repo: PostgresStorageReposito
 
     returned = await repo.get_result("user-1", task_id)
     assert returned.data == {"pi": "3.141"}
-    assert returned.task_metadata.finished_at == finished_at
+    assert returned.task_metadata.finished_at == finished_at.replace(tzinfo=None)
 
 
 @pytest.mark.asyncio
