@@ -74,7 +74,11 @@ def configure_stream_publisher(settings: StreamSettings | None = None) -> Stream
         _stream_publisher = build_stream_publisher(settings)
 
     if inject.is_configured():
-        inject.get_injector().binder.bind(TaskEventPublisherRepository, _stream_publisher)
+        injector = inject.get_injector()
+        if hasattr(injector, "binder"):
+            injector.binder.bind(TaskEventPublisherRepository, _stream_publisher)
+        else:
+            injector.bind(TaskEventPublisherRepository, _stream_publisher)
     else:
         def _config(binder: inject.Binder) -> None:
             binder.bind(TaskEventPublisherRepository, _stream_publisher)

@@ -14,10 +14,8 @@ from src.setup.stream_config import configure_stream_consumer
 
 settings = ApiSettings()
 configure_di()
-consumer = configure_stream_consumer()
 
-broadcaster = WebSocketStatusBroadcaster(connection_manager)
-inject.get_injector().binder.bind(TaskStatusBroadcaster, broadcaster)
+consumer = configure_stream_consumer()
 
 app = FastAPI(
     title=settings.APP_NAME,
