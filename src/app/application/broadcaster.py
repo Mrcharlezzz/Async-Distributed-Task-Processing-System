@@ -8,3 +8,6 @@ from src.app.domain.events.task_event import TaskEvent
 class TaskStatusBroadcaster(Protocol):
     async def broadcast_status(self, event: TaskEvent) -> None:
         """Broadcast a task status event to connected clients."""
+
+    async def broadcast_result_chunk(self, event: TaskEvent) -> None:
+        """Broadcast a task result chunk event to connected clients."""

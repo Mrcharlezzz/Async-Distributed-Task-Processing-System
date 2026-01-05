@@ -47,6 +47,16 @@ class WebSocketStatusBroadcaster(TaskStatusBroadcaster):
             },
         )
 
+    async def broadcast_result_chunk(self, event: TaskEvent) -> None:
+        await self._manager.broadcast(
+            event.task_id,
+            {
+                "type": event.type.value,
+                "task_id": event.task_id,
+                "payload": event.payload,
+            },
+        )
+
 
 connection_manager = TaskConnectionManager()
 

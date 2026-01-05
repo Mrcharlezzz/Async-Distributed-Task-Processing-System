@@ -39,7 +39,9 @@ class TaskEventHandler:
         await self._storage.set_task_result(event.task_id, result)
 
     async def handle_result_chunk_event(self, event: TaskEvent) -> None:
-        logger.warning(
-            "Ignoring result chunk event; streaming updates not implemented",
-            extra={"task_id": event.task_id},
-        )
+        payload = event.payload
+        if not isinstance(payload, dict):
+            raise ValueError("Result chunk payload is missing or invalid")
+        if "chunk_id" not in payload or "data" not in payload:
+            raise ValueError("Result chunk payload must include chunk_id and data")
+        await self._broadcaster.broadcast_result_chunk(event)

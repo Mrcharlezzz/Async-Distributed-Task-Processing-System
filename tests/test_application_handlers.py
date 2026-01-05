@@ -1,7 +1,7 @@
 import pytest
 
 from src.app.application.broadcaster import TaskStatusBroadcaster
-from src.app.application.handlers import handle_result_event, handle_status_event
+from src.app.application.handlers import TaskEventHandler
 from src.app.domain.events.task_event import TaskEvent
 from src.app.domain.models.task_progress import TaskProgress
 from src.app.domain.models.task_state import TaskState
@@ -36,26 +36,23 @@ class StubStorage(StorageRepository):
         self.result_calls.append((task_id, result))
 
 
+class StubBroadcaster(TaskStatusBroadcaster):
+    def __init__(self) -> None:
+        self.status_events: list[TaskEvent] = []
+        self.chunk_events: list[TaskEvent] = []
+
+    async def broadcast_status(self, event: TaskEvent) -> None:
+        self.status_events.append(event)
+
+    async def broadcast_result_chunk(self, event: TaskEvent) -> None:
+        self.chunk_events.append(event)
+
+
 @pytest.mark.asyncio
-async def test_handle_status_event_updates_storage(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_handle_status_event_updates_storage() -> None:
     storage = StubStorage()
-    broadcaster_calls: list[object] = []
-
-    import inject
-
-    def fake_instance(interface: object):
-        if interface is StorageRepository:
-            return storage
-        if interface is TaskStatusBroadcaster:
-            async def _broadcast(event):
-                broadcaster_calls.append(event)
-            class _Broadcaster:
-                async def broadcast_status(self, event):
-                    await _broadcast(event)
-            return _Broadcaster()
-        raise RuntimeError(f"Unexpected dependency request: {interface}")
-
-    monkeypatch.setattr(inject, "instance", fake_instance)
+    broadcaster = StubBroadcaster()
+    handler = TaskEventHandler(storage=storage, broadcaster=broadcaster)
 
     status = TaskStatus(
         state=TaskState.RUNNING,
@@ -64,37 +61,39 @@ async def test_handle_status_event_updates_storage(monkeypatch: pytest.MonkeyPat
     )
     event = TaskEvent.status("task-1", status)
 
-    await handle_status_event(event)
+    await handler.handle_status_event(event)
 
     assert storage.status_calls == [("task-1", status)]
-    assert broadcaster_calls == [event]
+    assert broadcaster.status_events == [event]
 
 
 @pytest.mark.asyncio
-async def test_handle_result_event_updates_storage(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_handle_result_event_updates_storage() -> None:
     storage = StubStorage()
-
-    import inject
-
-    def fake_instance(interface: object):
-        if interface is StorageRepository:
-            return storage
-        if interface is TaskStatusBroadcaster:
-            class _Broadcaster:
-                async def broadcast_status(self, event):
-                    return None
-            return _Broadcaster()
-        raise RuntimeError(f"Unexpected dependency request: {interface}")
-
-    monkeypatch.setattr(inject, "instance", fake_instance)
+    broadcaster = StubBroadcaster()
+    handler = TaskEventHandler(storage=storage, broadcaster=broadcaster)
 
     payload = {"task_id": "task-2", "data": {"value": 42}}
     event = TaskEvent.result("task-2", payload)
 
-    await handle_result_event(event)
+    await handler.handle_result_event(event)
 
     assert len(storage.result_calls) == 1
     task_id, result = storage.result_calls[0]
     assert task_id == "task-2"
     assert result.task_id == "task-2"
     assert result.data == {"value": 42}
+
+
+@pytest.mark.asyncio
+async def test_handle_result_chunk_event_broadcasts() -> None:
+    storage = StubStorage()
+    broadcaster = StubBroadcaster()
+    handler = TaskEventHandler(storage=storage, broadcaster=broadcaster)
+
+    event = TaskEvent.result_chunk("task-3", "0", {"delta": "hi"}, is_last=False)
+
+    await handler.handle_result_chunk_event(event)
+
+    assert broadcaster.chunk_events == [event]
+    assert storage.result_calls == []
