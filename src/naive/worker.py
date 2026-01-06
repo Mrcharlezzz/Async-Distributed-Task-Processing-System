@@ -14,7 +14,7 @@ def _compute_pi(digits: int) -> str:
 
 def main() -> None:
     db_path = "/data/naive.sqlite"
-    sleep_per_digit = 0.02
+    sleep_per_digit = 0.1
     idle_sleep = 0.2
 
     store = NaiveStore(db_path)

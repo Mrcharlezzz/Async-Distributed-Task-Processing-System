@@ -3,20 +3,20 @@ const UI = {
   runStatus: document.getElementById("run-status"),
   digitsInput: document.getElementById("digits"),
   pollInput: document.getElementById("poll-interval"),
+  logOutput: document.getElementById("log-output"),
   streaming: {
-    progress: document.querySelector('.progress-bar[data-panel="streaming"]'),
-    result: document.querySelector('.result[data-panel="streaming"]'),
+    clients: document.querySelector('.clients[data-panel="streaming"]'),
     metrics: document.querySelector('.metrics[data-panel="streaming"]'),
   },
   polling: {
-    progress: document.querySelector('.progress-bar[data-panel="polling"]'),
-    result: document.querySelector('.result[data-panel="polling"]'),
+    clients: document.querySelector('.clients[data-panel="polling"]'),
     metrics: document.querySelector('.metrics[data-panel="polling"]'),
   },
 };
 
 const API_BASE = "/api";
 const WS_BASE = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}`;
+const CLIENT_COUNT = 5;
 
 const formatMs = (ms) => `${Math.round(ms)} ms`;
 const formatSec = (ms) => `${(ms / 1000).toFixed(2)} s`;
@@ -25,6 +25,31 @@ const formatBytes = (bytes) => {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 };
+
+function log(level, message, data) {
+  const ts = new Date().toISOString().split("T")[1].split(".")[0];
+  let line = `[${ts}] ${level.toUpperCase()}: ${message}`;
+  if (data !== undefined) {
+    line += ` ${JSON.stringify(data)}`;
+  }
+  if (level === "error") {
+    console.error(line);
+  } else {
+    console.log(line);
+  }
+  if (UI.logOutput) {
+    UI.logOutput.textContent += `${line}\n`;
+    UI.logOutput.scrollTop = UI.logOutput.scrollHeight;
+  }
+}
+
+window.addEventListener("error", (event) => {
+  log("error", "Unhandled error", { message: event.message });
+});
+
+window.addEventListener("unhandledrejection", (event) => {
+  log("error", "Unhandled promise rejection", { reason: String(event.reason) });
+});
 
 class ApiClient {
   async startPi(digits) {
@@ -53,14 +78,6 @@ class ApiClient {
     return data.task_id;
   }
 
-  async getProgress(taskId) {
-    return this._getJson(`${API_BASE}/check_progress?task_id=${encodeURIComponent(taskId)}`);
-  }
-
-  async getResult(taskId) {
-    return this._getJson(`${API_BASE}/task_result?task_id=${encodeURIComponent(taskId)}`);
-  }
-
   async getNaiveProgress(taskId) {
     return this._getJson(
       `${API_BASE}/naive/check_progress?task_id=${encodeURIComponent(taskId)}`
@@ -72,18 +89,23 @@ class ApiClient {
   }
 
   async _getJson(url) {
-    const res = await fetch(url);
-    const text = await res.text();
-    const bytes = text.length;
-    let data = null;
-    if (text) {
-      try {
-        data = JSON.parse(text);
-      } catch {
-        data = null;
+    try {
+      const res = await fetch(url);
+      const text = await res.text();
+      const bytes = text.length;
+      let data = null;
+      if (text) {
+        try {
+          data = JSON.parse(text);
+        } catch {
+          data = null;
+        }
       }
+      return { ok: res.ok, status: res.status, data, bytes };
+    } catch (error) {
+      log("error", "HTTP request failed", { url, error: String(error) });
+      return { ok: false, status: 0, data: null, bytes: 0, error: String(error) };
     }
-    return { ok: res.ok, status: res.status, data, bytes };
   }
 }
 
@@ -92,18 +114,19 @@ class WsClient {
     this.base = base;
   }
 
-  connect(taskId, onMessage, onOpen, onClose) {
+  connect(taskId, clientId, onMessage) {
     const ws = new WebSocket(`${this.base}/ws/tasks/${taskId}`);
     const keepalive = setInterval(() => {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send("ping");
       }
     }, 1000);
-    ws.addEventListener("open", () => onOpen?.());
+    ws.addEventListener("open", () => log("info", "WS connected", { clientId }));
     ws.addEventListener("message", (event) => onMessage(event.data));
+    ws.addEventListener("error", () => log("error", "WS error", { clientId }));
     ws.addEventListener("close", () => {
       clearInterval(keepalive);
-      onClose?.();
+      log("info", "WS closed", { clientId });
     });
     return {
       close: () => ws.close(),
@@ -112,10 +135,10 @@ class WsClient {
 }
 
 class StreamingEngine {
-  constructor(taskId, wsClient, state) {
+  constructor(taskId, wsClient, clientState) {
     this.taskId = taskId;
     this.wsClient = wsClient;
-    this.state = state;
+    this.state = clientState;
     this.socket = null;
     this.startTime = performance.now();
   }
@@ -123,9 +146,8 @@ class StreamingEngine {
   start() {
     this.socket = this.wsClient.connect(
       this.taskId,
-      (data) => this._handleMessage(data),
-      () => {},
-      () => {}
+      this.state.id,
+      (data) => this._handleMessage(data)
     );
   }
 
@@ -143,6 +165,7 @@ class StreamingEngine {
     try {
       message = JSON.parse(raw);
     } catch {
+      log("error", "WS message parse failed", { clientId: this.state.id });
       return;
     }
     if (message.type === "task.status") {
@@ -170,10 +193,10 @@ class StreamingEngine {
 }
 
 class PollingEngine {
-  constructor(taskId, apiClient, state, intervalMs) {
+  constructor(taskId, apiClient, clientState, intervalMs) {
     this.taskId = taskId;
     this.apiClient = apiClient;
-    this.state = state;
+    this.state = clientState;
     this.intervalMs = intervalMs;
     this.timer = null;
     this.inFlight = false;
@@ -200,6 +223,8 @@ class PollingEngine {
         this.state.progress = progress;
         this.state.status = progressRes.data.state ?? "RUNNING";
         this._maybeFirstUpdate();
+      } else if (progressRes.error) {
+        log("error", "Polling progress failed", { clientId: this.state.id });
       }
 
       const resultRes = await this.apiClient.getNaiveResult(this.taskId);
@@ -213,6 +238,8 @@ class PollingEngine {
           this.state.metrics.totalMs = performance.now() - this.startTime;
           this.stop();
         }
+      } else if (resultRes.error) {
+        log("error", "Polling result failed", { clientId: this.state.id });
       }
     } finally {
       this.inFlight = false;
@@ -235,32 +262,39 @@ class RunController {
   constructor(apiClient, wsClient) {
     this.apiClient = apiClient;
     this.wsClient = wsClient;
-    this.streamingEngine = null;
-    this.pollingEngine = null;
+    this.streamingEngines = [];
+    this.pollingEngines = [];
   }
 
   async run(digits, pollInterval, state) {
     this._resetState(state);
     state.runStatus = "starting";
     render(state);
+    log("info", "Demo started", { digits, pollInterval });
     try {
       const taskId = await this.apiClient.startPi(digits);
       await this.apiClient.startNaivePi(digits, taskId);
       state.taskId = taskId;
       state.runStatus = "running";
-      this.streamingEngine = new StreamingEngine(taskId, this.wsClient, state.streaming);
-      this.pollingEngine = new PollingEngine(taskId, this.apiClient, state.polling, pollInterval);
-      this.streamingEngine.start();
-      this.pollingEngine.start();
+      this.streamingEngines = state.streaming.clients.map(
+        (client) => new StreamingEngine(taskId, this.wsClient, client)
+      );
+      this.pollingEngines = state.polling.clients.map(
+        (client) => new PollingEngine(taskId, this.apiClient, client, pollInterval)
+      );
+      this.streamingEngines.forEach((engine) => engine.start());
+      this.pollingEngines.forEach((engine) => engine.start());
+      log("info", "Task started", { taskId });
     } catch (err) {
       state.runStatus = "error";
       state.error = err.message || String(err);
+      log("error", "Run failed", { error: state.error });
     }
   }
 
   stop() {
-    this.streamingEngine?.stop();
-    this.pollingEngine?.stop();
+    this.streamingEngines.forEach((engine) => engine.stop());
+    this.pollingEngines.forEach((engine) => engine.stop());
   }
 
   _resetState(state) {
@@ -272,7 +306,8 @@ class RunController {
   }
 }
 
-const createModeState = () => ({
+const createClientState = (id) => ({
+  id,
   status: "IDLE",
   progress: 0,
   result: "",
@@ -297,17 +332,78 @@ const createModeState = () => ({
   },
 });
 
+const createModeState = (count) => ({
+  clients: Array.from({ length: count }, (_, idx) => createClientState(idx + 1)),
+  reset() {
+    this.clients.forEach((client) => client.reset());
+  },
+});
+
 const state = {
   taskId: null,
   runStatus: "idle",
   error: null,
-  streaming: createModeState(),
-  polling: createModeState(),
+  streaming: createModeState(CLIENT_COUNT),
+  polling: createModeState(CLIENT_COUNT),
 };
 
 const apiClient = new ApiClient();
 const wsClient = new WsClient(WS_BASE);
 const controller = new RunController(apiClient, wsClient);
+
+function aggregateMetrics(clients) {
+  const firstUpdates = clients
+    .map((client) => client.metrics.firstUpdateMs)
+    .filter((value) => value !== null);
+  const totals = clients
+    .map((client) => client.metrics.totalMs)
+    .filter((value) => value !== null);
+  return {
+    firstUpdateMs: firstUpdates.length ? Math.min(...firstUpdates) : null,
+    totalMs: totals.length ? Math.max(...totals) : null,
+    messages: clients.reduce((sum, client) => sum + client.metrics.messages, 0),
+    requests: clients.reduce((sum, client) => sum + client.metrics.requests, 0),
+    bytes: clients.reduce((sum, client) => sum + client.metrics.bytes, 0),
+  };
+}
+
+function renderPanel(ui, mode, isStreaming) {
+  if (!ui.clients) {
+    log("error", "Missing client container", { panel: isStreaming ? "streaming" : "polling" });
+    return;
+  }
+  ui.clients.innerHTML = mode.clients
+    .map(
+      (client) => `
+        <div class="client">
+          <div class="client-label">Client ${client.id}</div>
+          <div class="client-progress">
+            <div class="progress-bar" style="width: ${Math.min(client.progress * 100, 100)}%"></div>
+          </div>
+          <div class="client-result">${client.result || "—"}</div>
+        </div>
+      `
+    )
+    .join("");
+
+  const metricsAggregate = aggregateMetrics(mode.clients);
+  const metrics = [
+    [
+      "Time to first update",
+      metricsAggregate.firstUpdateMs ? formatMs(metricsAggregate.firstUpdateMs) : "—",
+    ],
+    ["Total time", metricsAggregate.totalMs ? formatSec(metricsAggregate.totalMs) : "—"],
+    [
+      isStreaming ? "WS messages" : "HTTP requests",
+      isStreaming ? metricsAggregate.messages : metricsAggregate.requests,
+    ],
+    ["Bytes received", formatBytes(metricsAggregate.bytes)],
+  ];
+
+  ui.metrics.innerHTML = metrics
+    .map(([label, value]) => `<div><dt>${label}</dt><dd>${value}</dd></div>`)
+    .join("");
+}
 
 function render(state) {
   UI.runButton.disabled = state.runStatus === "running" || state.runStatus === "starting";
@@ -316,25 +412,6 @@ function render(state) {
     : state.runStatus.toUpperCase();
   renderPanel(UI.streaming, state.streaming, true);
   renderPanel(UI.polling, state.polling, false);
-}
-
-function renderPanel(ui, mode, isStreaming) {
-  ui.progress.style.width = `${Math.min(mode.progress * 100, 100)}%`;
-  ui.result.textContent = mode.result || "—";
-
-  const metrics = [
-    ["Time to first update", mode.metrics.firstUpdateMs ? formatMs(mode.metrics.firstUpdateMs) : "—"],
-    ["Total time", mode.metrics.totalMs ? formatSec(mode.metrics.totalMs) : "—"],
-    [
-      isStreaming ? "WS messages" : "HTTP requests",
-      isStreaming ? mode.metrics.messages : mode.metrics.requests,
-    ],
-    ["Bytes received", formatBytes(mode.metrics.bytes)],
-  ];
-
-  ui.metrics.innerHTML = metrics
-    .map(([label, value]) => `<div><dt>${label}</dt><dd>${value}</dd></div>`)
-    .join("");
 }
 
 UI.runButton.addEventListener("click", async (event) => {
@@ -347,8 +424,11 @@ UI.runButton.addEventListener("click", async (event) => {
 
 setInterval(() => {
   render(state);
-  if (state.streaming.completed && state.polling.completed) {
+  const streamingDone = state.streaming.clients.every((client) => client.completed);
+  const pollingDone = state.polling.clients.every((client) => client.completed);
+  if (streamingDone && pollingDone && state.runStatus === "running") {
     state.runStatus = "done";
+    log("info", "Demo completed");
   }
 }, 100);
 

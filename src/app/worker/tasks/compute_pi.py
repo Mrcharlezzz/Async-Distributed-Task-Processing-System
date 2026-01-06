@@ -29,7 +29,7 @@ def compute_pi(self, payload: dict) -> dict:
     pi: str = get_pi(digits)
 
     total = len(pi)
-    with reporter.report_result_chunk(batch_size=5) as chunks:
+    with reporter.report_result_chunk(batch_size=1) as chunks:
         for k, digit in enumerate(pi):
             time.sleep(_settings.SLEEP_PER_DIGIT_SEC)
             progress = (k + 1) / total if total else 1.0

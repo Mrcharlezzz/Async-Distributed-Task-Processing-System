@@ -36,10 +36,7 @@
             <h2>Streaming</h2>
             <p>WebSocket + Redis Streams</p>
           </header>
-          <div class="progress">
-            <div class="progress-bar" data-panel="streaming"></div>
-          </div>
-          <div class="result" data-panel="streaming"></div>
+          <div class="clients" data-panel="streaming"></div>
           <dl class="metrics" data-panel="streaming"></dl>
         </article>
 
@@ -48,12 +45,17 @@
             <h2>Naive Polling</h2>
             <p>Worst-practice baseline</p>
           </header>
-          <div class="progress">
-            <div class="progress-bar" data-panel="polling"></div>
-          </div>
-          <div class="result" data-panel="polling"></div>
+          <div class="clients" data-panel="polling"></div>
           <dl class="metrics" data-panel="polling"></dl>
         </article>
+      </section>
+
+      <section class="logs">
+        <header>
+          <h3>Run Log</h3>
+          <p>Errors and milestones surface here (and in DevTools console).</p>
+        </header>
+        <div id="log-output" class="log-output"></div>
       </section>
     </main>
 
