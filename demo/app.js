@@ -43,6 +43,12 @@ function log(level, message, data) {
   }
 }
 
+log("info", "Demo client loaded", { clientCount: CLIENT_COUNT });
+
+if (!UI.runButton || !UI.streaming.clients || !UI.polling.clients) {
+  log("error", "Missing UI elements; check HTML/JS version mismatch.");
+}
+
 window.addEventListener("error", (event) => {
   log("error", "Unhandled error", { message: event.message });
 });
@@ -272,6 +278,9 @@ class RunController {
     this._resetState(state);
     state.runStatus = "starting";
     render(state);
+    if (UI.logOutput) {
+      UI.logOutput.textContent = "";
+    }
     log("info", "Demo started", { digits, pollInterval });
     try {
       const taskId = await this.apiClient.startPi(digits);
@@ -315,6 +324,7 @@ const createClientState = (id) => ({
   result: "",
   statusMetrics: null,
   completed: false,
+  renderedLength: 0,
   metrics: {
     firstUpdateMs: null,
     totalMs: null,
@@ -328,6 +338,7 @@ const createClientState = (id) => ({
     this.result = "";
     this.statusMetrics = null;
     this.completed = false;
+    this.renderedLength = 0;
     this.metrics.firstUpdateMs = null;
     this.metrics.totalMs = null;
     this.metrics.messages = 0;
@@ -376,22 +387,8 @@ function renderPanel(ui, mode, isStreaming) {
     log("error", "Missing client container", { panel: isStreaming ? "streaming" : "polling" });
     return;
   }
-  ui.clients.innerHTML = mode.clients
-    .map(
-      (client) => `
-        <div class="client">
-          <div class="client-label">Client ${client.id}</div>
-          <div class="client-metrics">${
-            client.statusMetrics ? JSON.stringify(client.statusMetrics) : "metrics: —"
-          }</div>
-          <div class="client-progress">
-            <div class="progress-bar" style="width: ${Math.min(client.progress * 100, 100)}%"></div>
-          </div>
-          <div class="client-result">${client.result || "—"}</div>
-        </div>
-      `
-    )
-    .join("");
+  ensureClientNodes(ui.clients, mode.clients.length);
+  updateClientNodes(ui.clients, mode.clients);
 
   const metricsAggregate = aggregateMetrics(mode.clients);
   const metrics = [
@@ -410,6 +407,68 @@ function renderPanel(ui, mode, isStreaming) {
   ui.metrics.innerHTML = metrics
     .map(([label, value]) => `<div><dt>${label}</dt><dd>${value}</dd></div>`)
     .join("");
+}
+
+function ensureClientNodes(container, count) {
+  const existing = container.querySelectorAll(".client").length;
+  if (existing === count) {
+    return;
+  }
+  container.innerHTML = "";
+  for (let i = 0; i < count; i += 1) {
+    const client = document.createElement("div");
+    client.className = "client";
+    client.innerHTML = `
+      <div class="client-label">Client ${i + 1}</div>
+      <div class="client-metrics">metrics: —</div>
+      <div class="client-progress">
+        <div class="progress-bar" style="width: 0%"></div>
+      </div>
+      <div class="client-result">—</div>
+    `;
+    container.appendChild(client);
+  }
+}
+
+function updateClientNodes(container, clients) {
+  const nodes = container.querySelectorAll(".client");
+  clients.forEach((client, idx) => {
+    const node = nodes[idx];
+    if (!node) return;
+    const metricsNode = node.querySelector(".client-metrics");
+    const progressNode = node.querySelector(".progress-bar");
+    const resultNode = node.querySelector(".client-result");
+
+    if (metricsNode) {
+      metricsNode.textContent = client.statusMetrics
+        ? JSON.stringify(client.statusMetrics)
+        : "metrics: —";
+    }
+    if (progressNode) {
+      progressNode.style.width = `${Math.min(client.progress * 100, 100)}%`;
+    }
+    if (resultNode) {
+      const shouldStick =
+        resultNode.scrollTop + resultNode.clientHeight >= resultNode.scrollHeight - 8;
+      const next = client.result || "—";
+      if (next === "—") {
+        resultNode.textContent = "—";
+        client.renderedLength = 0;
+      } else if (next.length < client.renderedLength) {
+        resultNode.textContent = next;
+        client.renderedLength = next.length;
+      } else if (next.length > client.renderedLength && next !== "—") {
+        resultNode.textContent += next.slice(client.renderedLength);
+        client.renderedLength = next.length;
+      } else if (client.renderedLength === 0 && next !== "—") {
+        resultNode.textContent = next;
+        client.renderedLength = next.length;
+      }
+      if (shouldStick) {
+        resultNode.scrollTop = resultNode.scrollHeight;
+      }
+    }
+  });
 }
 
 function render(state) {

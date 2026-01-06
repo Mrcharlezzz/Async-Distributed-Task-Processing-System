@@ -205,10 +205,12 @@ h1 {
   border-radius: 12px;
   padding: 12px;
   line-height: 1.5;
-  max-height: 90px;
+  height: 90px;
   max-width: 100%;
   min-width: 0;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
   white-space: pre-wrap;
   word-break: break-all;
   overflow-wrap: anywhere;
