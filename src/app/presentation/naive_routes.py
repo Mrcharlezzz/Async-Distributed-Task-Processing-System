@@ -44,6 +44,7 @@ def naive_check_progress(task_id: str = Query(..., description="Naive task id"))
             "total": task.progress_total,
             "percentage": percent,
         },
+        "metrics": task.metrics,
     }
 
 

@@ -173,6 +173,7 @@ class StreamingEngine {
       const progress = status?.progress?.percentage ?? 0;
       this.state.progress = progress;
       this.state.status = status?.state ?? "RUNNING";
+      this.state.statusMetrics = status?.metrics ?? null;
     }
     if (message.type === "task.result_chunk") {
       const payload = message.payload;
@@ -222,6 +223,7 @@ class PollingEngine {
         const progress = progressRes.data.progress?.percentage ?? 0;
         this.state.progress = progress;
         this.state.status = progressRes.data.state ?? "RUNNING";
+        this.state.statusMetrics = progressRes.data.metrics ?? null;
         this._maybeFirstUpdate();
       } else if (progressRes.error) {
         log("error", "Polling progress failed", { clientId: this.state.id });
@@ -311,6 +313,7 @@ const createClientState = (id) => ({
   status: "IDLE",
   progress: 0,
   result: "",
+  statusMetrics: null,
   completed: false,
   metrics: {
     firstUpdateMs: null,
@@ -323,6 +326,7 @@ const createClientState = (id) => ({
     this.status = "IDLE";
     this.progress = 0;
     this.result = "";
+    this.statusMetrics = null;
     this.completed = false;
     this.metrics.firstUpdateMs = null;
     this.metrics.totalMs = null;
@@ -377,6 +381,9 @@ function renderPanel(ui, mode, isStreaming) {
       (client) => `
         <div class="client">
           <div class="client-label">Client ${client.id}</div>
+          <div class="client-metrics">${
+            client.statusMetrics ? JSON.stringify(client.statusMetrics) : "metrics: —"
+          }</div>
           <div class="client-progress">
             <div class="progress-bar" style="width: ${Math.min(client.progress * 100, 100)}%"></div>
           </div>

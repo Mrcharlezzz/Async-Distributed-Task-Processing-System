@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass
+import json
 from datetime import datetime, timezone
 
 
@@ -18,6 +19,7 @@ class NaiveTaskRow:
     progress_total: int
     result: str
     done: bool
+    metrics: dict | None
     created_at: str
     updated_at: str
 
@@ -46,10 +48,14 @@ class NaiveStore:
                     result TEXT NOT NULL,
                     done INTEGER NOT NULL,
                     created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
+                    updated_at TEXT NOT NULL,
+                    metrics TEXT
                 )
                 """
             )
+            columns = {row[1] for row in conn.execute("PRAGMA table_info(naive_tasks)")}
+            if "metrics" not in columns:
+                conn.execute("ALTER TABLE naive_tasks ADD COLUMN metrics TEXT")
 
     def create_task(self, task_id: str, digits: int) -> None:
         now = _utc_now()
@@ -80,6 +86,7 @@ class NaiveStore:
             progress_total=row["progress_total"],
             result=row["result"],
             done=bool(row["done"]),
+            metrics=json.loads(row["metrics"]) if row["metrics"] else None,
             created_at=row["created_at"],
             updated_at=row["updated_at"],
         )
@@ -115,13 +122,16 @@ class NaiveStore:
         result: str,
         done: bool,
         status: str,
+        metrics: dict | None = None,
     ) -> None:
+        metrics_json = json.dumps(metrics) if metrics is not None else None
         with self._connect() as conn:
             conn.execute(
                 """
                 UPDATE naive_tasks
                 SET progress_current = ?, progress_total = ?, result = ?,
-                    done = ?, status = ?, updated_at = ?
+                    done = ?, status = ?, updated_at = ?,
+                    metrics = ?
                 WHERE task_id = ?
                 """,
                 (
@@ -131,6 +141,7 @@ class NaiveStore:
                     1 if done else 0,
                     status,
                     _utc_now(),
+                    metrics_json,
                     task_id,
                 ),
             )

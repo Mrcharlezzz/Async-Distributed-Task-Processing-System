@@ -181,6 +181,15 @@ h1 {
   letter-spacing: 0.12em;
 }
 
+.client-metrics {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  background: #f2e9dd;
+  border-radius: 8px;
+  padding: 4px 6px;
+}
+
 .client-progress {
   height: 6px;
   background: #efe5d7;

@@ -62,6 +62,7 @@ class OrmMapper:
             progress_percentage=progress.percentage,
             progress_phase=progress.phase,
             message=status.message,
+            metrics=status.metrics,
         )
 
     @staticmethod
@@ -117,6 +118,7 @@ class OrmMapper:
             state=row.status.state,
             progress=progress,
             message=row.status.message,
+            metrics=row.status.metrics,
         )
 
     @staticmethod

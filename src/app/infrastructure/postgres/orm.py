@@ -82,6 +82,7 @@ class TaskStatusRow(Base):
     progress_percentage: Mapped[float | None] = mapped_column(Float)
     progress_phase: Mapped[str | None] = mapped_column(String(128))
     message: Mapped[str | None] = mapped_column(Text)
+    metrics: Mapped[dict | None] = mapped_column(JSON)
 
     task: Mapped[TaskRow] = relationship(back_populates="status")
 

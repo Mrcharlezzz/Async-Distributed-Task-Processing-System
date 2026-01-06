@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import random
 import time
 
 from mpmath import mp
@@ -14,7 +15,6 @@ def _compute_pi(digits: int) -> str:
 
 def main() -> None:
     db_path = "/data/naive.sqlite"
-    sleep_per_digit = 0.1
     idle_sleep = 0.2
 
     store = NaiveStore(db_path)
@@ -31,6 +31,9 @@ def main() -> None:
         result = ""
         for idx, char in enumerate(pi_value, start=1):
             result += char
+            sleep_time = random.uniform(0.02, 0.2)
+            remaining = total - idx
+            eta_seconds = remaining * sleep_time
             store.update_progress(
                 task.task_id,
                 progress_current=idx,
@@ -38,8 +41,13 @@ def main() -> None:
                 result=result,
                 done=False,
                 status="RUNNING",
+                metrics={
+                    "eta_seconds": eta_seconds,
+                    "digits_sent": idx,
+                    "digits_total": total,
+                },
             )
-            time.sleep(sleep_per_digit)
+            time.sleep(sleep_time)
 
         store.update_progress(
             task.task_id,
@@ -48,6 +56,11 @@ def main() -> None:
             result=result,
             done=True,
             status="COMPLETED",
+            metrics={
+                "eta_seconds": 0.0,
+                "digits_sent": total,
+                "digits_total": total,
+            },
         )
 
 
