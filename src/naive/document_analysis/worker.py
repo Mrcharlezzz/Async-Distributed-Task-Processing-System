@@ -4,6 +4,8 @@ import os
 import random
 import re
 import time
+import urllib.request
+from urllib.parse import urlparse
 
 from src.naive.document_analysis.storage import DocumentAnalysisStore
 
@@ -11,6 +13,7 @@ MIN_LINES_PER_CHUNK = 50
 MAX_LINES_PER_CHUNK = 300
 SNIPPET_RADIUS = 30
 MAX_SNIPPETS_PER_CHUNK = 20
+DEFAULT_DOWNLOAD_DIR = "/data/books"
 
 
 def _eta_seconds(start_time: float, processed_bytes: int, total_bytes: int) -> float:
@@ -20,6 +23,36 @@ def _eta_seconds(start_time: float, processed_bytes: int, total_bytes: int) -> f
     rate = processed_bytes / elapsed
     remaining = max(total_bytes - processed_bytes, 0)
     return remaining / rate if rate > 0 else 0.0
+
+
+def _resolve_document_path(document_path: str | None, document_url: str | None) -> str | None:
+    if document_url:
+        parsed = urlparse(document_url)
+        filename = os.path.basename(parsed.path) or "document.txt"
+        return os.path.join(DEFAULT_DOWNLOAD_DIR, filename)
+    return document_path
+
+
+def _ensure_document(document_path: str, document_url: str | None) -> None:
+    if not document_url:
+        return
+    if os.path.exists(document_path):
+        return
+    directory = os.path.dirname(document_path)
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+    urllib.request.urlretrieve(document_url, document_path)
+
+
+def _mark_failed(store: DocumentAnalysisStore, task_id: str) -> None:
+    store.update_doc_progress(
+        task_id,
+        progress_current=0,
+        progress_total=0,
+        done=True,
+        status="FAILED",
+        metrics={"eta_seconds": 0.0, "snippets_emitted": 0, "words_processed": 0},
+    )
 
 
 def main() -> None:
@@ -35,16 +68,18 @@ def main() -> None:
             time.sleep(idle_sleep)
             continue
 
-        document_path = task.document_path
+        document_path = _resolve_document_path(task.document_path, task.document_url)
+        if not document_path:
+            _mark_failed(store, task.task_id)
+            continue
+
+        try:
+            _ensure_document(document_path, task.document_url)
+        except Exception:
+            _mark_failed(store, task.task_id)
+            continue
         if not os.path.exists(document_path):
-            store.update_doc_progress(
-                task.task_id,
-                progress_current=0,
-                progress_total=0,
-                done=True,
-                status="FAILED",
-                metrics={"eta_seconds": 0.0, "snippets_emitted": 0, "words_processed": 0},
-            )
+            _mark_failed(store, task.task_id)
             continue
 
         with open(document_path, "r", encoding="utf-8", errors="ignore") as handle:

@@ -1,6 +1,9 @@
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Query
+import os
+from urllib.parse import urlparse
+
 from pydantic import BaseModel, Field
 
 from src.naive.compute_pi.storage import ComputePiStore
@@ -15,7 +18,12 @@ class NaivePiRequest(BaseModel):
 
 
 class NaiveDocRequest(BaseModel):
-    document_path: str = Field(..., description="Local path to the document.")
+    document_path: str | None = Field(
+        default=None, description="Local path to the document."
+    )
+    document_url: str | None = Field(
+        default=None, description="Optional URL to download the document."
+    )
     keywords: list[str] = Field(..., description="Keywords to search for.")
     task_id: str | None = None
 
@@ -30,6 +38,14 @@ def _doc_store() -> DocumentAnalysisStore:
     store = DocumentAnalysisStore("/data/naive.sqlite")
     store.init_db()
     return store
+
+
+def _resolve_document_path(document_path: str | None, document_url: str | None) -> str | None:
+    if document_url:
+        parsed = urlparse(document_url)
+        filename = os.path.basename(parsed.path) or "document.txt"
+        return os.path.join("/data/books", filename)
+    return document_path
 
 
 @router.post("/calculate_pi")
@@ -78,8 +94,11 @@ def naive_task_result(task_id: str = Query(..., description="Naive task id")):
 def naive_document_analysis(body: NaiveDocRequest):
     store = _doc_store()
     task_id = body.task_id or uuid4().hex
+    document_path = _resolve_document_path(body.document_path, body.document_url)
+    if not document_path:
+        raise HTTPException(status_code=400, detail="document_path or document_url is required")
     if store.get_doc_task(task_id) is None:
-        store.create_doc_task(task_id, body.document_path, body.keywords)
+        store.create_doc_task(task_id, document_path, body.keywords, body.document_url)
     return {"task_id": task_id}
 
 

@@ -14,6 +14,7 @@ def _utc_now() -> str:
 class NaiveDocTaskRow:
     task_id: str
     document_path: str
+    document_url: str | None
     keywords: list[str]
     status: str
     progress_current: int
@@ -43,6 +44,7 @@ class DocumentAnalysisStore:
                 CREATE TABLE IF NOT EXISTS naive_doc_tasks (
                     task_id TEXT PRIMARY KEY,
                     document_path TEXT NOT NULL,
+                    document_url TEXT,
                     keywords TEXT NOT NULL,
                     status TEXT NOT NULL,
                     progress_current INTEGER NOT NULL,
@@ -64,6 +66,8 @@ class DocumentAnalysisStore:
                 )
             if "keywords" not in doc_columns:
                 conn.execute("ALTER TABLE naive_doc_tasks ADD COLUMN keywords TEXT NOT NULL")
+            if "document_url" not in doc_columns:
+                conn.execute("ALTER TABLE naive_doc_tasks ADD COLUMN document_url TEXT")
 
             conn.execute(
                 """
@@ -79,19 +83,26 @@ class DocumentAnalysisStore:
                 """
             )
 
-    def create_doc_task(self, task_id: str, document_path: str, keywords: list[str]) -> None:
+    def create_doc_task(
+        self,
+        task_id: str,
+        document_path: str,
+        keywords: list[str],
+        document_url: str | None = None,
+    ) -> None:
         now = _utc_now()
         with self._connect() as conn:
             conn.execute(
                 """
                 INSERT INTO naive_doc_tasks (
-                    task_id, document_path, keywords, status, progress_current, progress_total,
+                    task_id, document_path, document_url, keywords, status, progress_current, progress_total,
                     done, metrics, last_snippet_id, created_at, updated_at
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     task_id,
                     document_path,
+                    document_url,
                     json.dumps(keywords),
                     "QUEUED",
                     0,
@@ -137,6 +148,7 @@ class DocumentAnalysisStore:
         return NaiveDocTaskRow(
             task_id=row["task_id"],
             document_path=row["document_path"],
+            document_url=row["document_url"],
             keywords=json.loads(row["keywords"]) if row["keywords"] else [],
             status=row["status"],
             progress_current=row["progress_current"],

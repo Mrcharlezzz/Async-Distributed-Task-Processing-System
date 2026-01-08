@@ -8,7 +8,14 @@ class TaskPayload(BaseModel):
 
 
 class DocumentAnalysisPayload(TaskPayload):
-    document_path: str = Field(description="Local path to the document to analyze.")
+    document_path: str | None = Field(
+        default=None,
+        description="Local path to the document to analyze.",
+    )
+    document_url: str | None = Field(
+        default=None,
+        description="Optional URL to download the document before processing.",
+    )
     keywords: list[str] = Field(
         description="Keywords to search for (case-insensitive substring match)."
     )

@@ -4,6 +4,8 @@ import random
 import time
 import bisect
 import re
+import urllib.request
+from urllib.parse import urlparse
 
 from src.app.domain.models.task_progress import TaskProgress
 from src.app.domain.models.task_state import TaskState
@@ -15,6 +17,7 @@ MIN_LINES_PER_CHUNK = 50
 MAX_LINES_PER_CHUNK = 300
 SNIPPET_RADIUS = 30
 MAX_SNIPPETS_PER_CHUNK = 20
+DEFAULT_DOWNLOAD_DIR = "/data/books"
 
 
 def _eta_seconds(start_time: float, processed_bytes: int, total_bytes: int) -> float:
@@ -56,42 +59,59 @@ def _emit_snippet(
     )
 
 
+def _resolve_document_path(document_path: str | None, document_url: str | None) -> str | None:
+    if document_url:
+        parsed = urlparse(document_url)
+        filename = os.path.basename(parsed.path) or "document.txt"
+        return os.path.join(DEFAULT_DOWNLOAD_DIR, filename)
+    return document_path
+
+
+def _ensure_document(document_path: str, document_url: str | None) -> None:
+    if not document_url:
+        return
+    if os.path.exists(document_path):
+        return
+    directory = os.path.dirname(document_path)
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+    urllib.request.urlretrieve(document_url, document_path)
+
+
+def _report_failed(reporter: TaskReporter, message: str) -> dict:
+    status = TaskStatus(
+        state=TaskState.FAILED,
+        progress=TaskProgress(current=0, total=0, percentage=0.0),
+        message=message,
+        metrics={"eta_seconds": 0.0, "snippets_emitted": 0, "words_processed": 0},
+    )
+    reporter.report_status(status)
+    return {"error": message}
+
+
 @celery_app.task(name="document_analysis", bind=True)
 def document_analysis(self, payload: dict) -> dict:
     reporter = TaskReporter(self.request.id)
     payload_data = payload.get("payload") or {}
     document_path = payload_data.get("document_path")
+    document_url = payload_data.get("document_url")
     keywords = payload_data.get("keywords") or []
 
+    document_path = _resolve_document_path(document_path, document_url)
+
     if not document_path:
-        status = TaskStatus(
-            state=TaskState.FAILED,
-            progress=TaskProgress(current=0, total=0, percentage=0.0),
-            message="document_path is required",
-            metrics={"eta_seconds": 0.0, "snippets_emitted": 0, "words_processed": 0},
-        )
-        reporter.report_status(status)
-        return {"error": "document_path is required"}
+        return _report_failed(reporter, "document_path or document_url is required")
 
     if not keywords:
-        status = TaskStatus(
-            state=TaskState.FAILED,
-            progress=TaskProgress(current=0, total=0, percentage=0.0),
-            message="keywords are required",
-            metrics={"eta_seconds": 0.0, "snippets_emitted": 0, "words_processed": 0},
-        )
-        reporter.report_status(status)
-        return {"error": "keywords are required"}
+        return _report_failed(reporter, "keywords are required")
+
+    try:
+        _ensure_document(document_path, document_url)
+    except Exception as exc:
+        return _report_failed(reporter, f"failed to download document: {exc}")
 
     if not os.path.exists(document_path):
-        status = TaskStatus(
-            state=TaskState.FAILED,
-            progress=TaskProgress(current=0, total=0, percentage=0.0),
-            message=f"document_path not found: {document_path}",
-            metrics={"eta_seconds": 0.0, "snippets_emitted": 0, "words_processed": 0},
-        )
-        reporter.report_status(status)
-        return {"error": "document_path not found"}
+        return _report_failed(reporter, f"document_path not found: {document_path}")
 
     total_bytes = os.path.getsize(document_path)
     pattern = re.compile("|".join(re.escape(keyword) for keyword in keywords), re.IGNORECASE)
