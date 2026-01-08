@@ -82,7 +82,7 @@ def main() -> None:
             _mark_failed(store, task.task_id)
             continue
 
-        with open(document_path, "r", encoding="utf-8", errors="ignore") as handle:
+        with open(document_path, "rb") as handle:
             total_bytes = os.path.getsize(document_path)
             start_time = time.monotonic()
             snippet_count = 0
@@ -113,8 +113,11 @@ def main() -> None:
                 if not lines:
                     break
 
-                chunk_text = "".join(lines)
-                line_offsets = list(itertools.accumulate((len(line) for line in lines), initial=0))
+                text_lines = [line.decode("utf-8", errors="ignore") for line in lines]
+                chunk_text = "".join(text_lines)
+                line_offsets = list(
+                    itertools.accumulate((len(line) for line in text_lines), initial=0)
+                )
                 words_processed += len(chunk_text.split())
 
                 snippets_emitted = 0

@@ -4,6 +4,7 @@ import random
 import time
 import bisect
 import re
+import logging
 import urllib.request
 from urllib.parse import urlparse
 
@@ -18,6 +19,8 @@ MAX_LINES_PER_CHUNK = 300
 SNIPPET_RADIUS = 30
 MAX_SNIPPETS_PER_CHUNK = 20
 DEFAULT_DOWNLOAD_DIR = "/data/books"
+
+logger = logging.getLogger(__name__)
 
 
 def _eta_seconds(start_time: float, processed_bytes: int, total_bytes: int) -> float:
@@ -79,6 +82,7 @@ def _ensure_document(document_path: str, document_url: str | None) -> None:
 
 
 def _report_failed(reporter: TaskReporter, message: str) -> dict:
+    logger.error("Document analysis failed: %s", message)
     status = TaskStatus(
         state=TaskState.FAILED,
         progress=TaskProgress(current=0, total=0, percentage=0.0),
@@ -135,15 +139,18 @@ def document_analysis(self, payload: dict) -> dict:
     )
 
     with reporter.report_result_chunk(batch_size=1) as chunks:
-        with open(document_path, "r", encoding="utf-8", errors="ignore") as handle:
+        with open(document_path, "rb") as handle:
             while True:
                 lines_to_read = random.randint(MIN_LINES_PER_CHUNK, MAX_LINES_PER_CHUNK)
                 lines = list(itertools.islice(handle, lines_to_read))
                 if not lines:
                     break
 
-                chunk_text = "".join(lines)
-                line_offsets = list(itertools.accumulate((len(line) for line in lines), initial=0))
+                text_lines = [line.decode("utf-8", errors="ignore") for line in lines]
+                chunk_text = "".join(text_lines)
+                line_offsets = list(
+                    itertools.accumulate((len(line) for line in text_lines), initial=0)
+                )
                 words_processed += len(chunk_text.split())
 
                 snippets_emitted = 0

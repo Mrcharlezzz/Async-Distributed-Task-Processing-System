@@ -67,6 +67,7 @@ def test_check_progress_returns_status_payload(api_client):
             "phase": None,
         },
         "message": "working",
+        "metrics": None,
     }
 
 

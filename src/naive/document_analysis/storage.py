@@ -97,7 +97,7 @@ class DocumentAnalysisStore:
                 INSERT INTO naive_doc_tasks (
                     task_id, document_path, document_url, keywords, status, progress_current, progress_total,
                     done, metrics, last_snippet_id, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     task_id,
