@@ -17,7 +17,7 @@ from src.app.worker.reporter import TaskReporter
 MIN_LINES_PER_CHUNK = 50
 MAX_LINES_PER_CHUNK = 300
 SNIPPET_RADIUS = 30
-MAX_SNIPPETS_PER_CHUNK = 20
+MAX_SNIPPETS_PER_CHUNK = 2000
 DEFAULT_DOWNLOAD_DIR = "/data/books"
 
 logger = logging.getLogger(__name__)
@@ -91,6 +91,34 @@ def _report_failed(reporter: TaskReporter, message: str) -> dict:
     )
     reporter.report_status(status)
     return {"error": message}
+
+
+def _report_running_status(
+    reporter: TaskReporter,
+    *,
+    bytes_read: int,
+    total_bytes: int,
+    snippets_emitted: int,
+    words_processed: int,
+    start_time: float,
+) -> None:
+    progress = bytes_read / total_bytes if total_bytes else 1.0
+    eta = _eta_seconds(start_time, bytes_read, total_bytes)
+    reporter.report_status(
+        TaskStatus(
+            state=TaskState.RUNNING,
+            progress=TaskProgress(
+                current=bytes_read,
+                total=total_bytes,
+                percentage=progress,
+            ),
+            metrics={
+                "eta_seconds": eta,
+                "snippets_emitted": snippets_emitted,
+                "words_processed": words_processed,
+            },
+        )
+    )
 
 
 @celery_app.task(name="document_analysis", bind=True)
@@ -168,25 +196,25 @@ def document_analysis(self, payload: dict) -> dict:
                     )
                     snippets_emitted += 1
                     total_snippets_emitted += 1
-
-                bytes_read = handle.tell()
-                progress = bytes_read / total_bytes if total_bytes else 1.0
-                eta = _eta_seconds(start_time, bytes_read, total_bytes)
-                reporter.report_status(
-                    TaskStatus(
-                        state=TaskState.RUNNING,
-                        progress=TaskProgress(
-                            current=bytes_read,
-                            total=total_bytes,
-                            percentage=progress,
-                        ),
-                        metrics={
-                            "eta_seconds": eta,
-                            "snippets_emitted": total_snippets_emitted,
-                            "words_processed": words_processed,
-                        },
+                    time.sleep(random.uniform(0.1, 0.5))  # Simulate processing delay
+                    _report_running_status(
+                        reporter,
+                        bytes_read=handle.tell(),
+                        total_bytes=total_bytes,
+                        snippets_emitted=total_snippets_emitted,
+                        words_processed=words_processed,
+                        start_time=start_time,
                     )
-                )
+
+                if snippets_emitted == 0:
+                    _report_running_status(
+                        reporter,
+                        bytes_read=handle.tell(),
+                        total_bytes=total_bytes,
+                        snippets_emitted=total_snippets_emitted,
+                        words_processed=words_processed,
+                        start_time=start_time,
+                    )
 
                 chunk_index += 1
                 line_number += len(lines)

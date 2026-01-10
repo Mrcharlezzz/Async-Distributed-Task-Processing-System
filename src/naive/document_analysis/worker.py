@@ -12,7 +12,7 @@ from src.naive.document_analysis.storage import DocumentAnalysisStore
 MIN_LINES_PER_CHUNK = 50
 MAX_LINES_PER_CHUNK = 300
 SNIPPET_RADIUS = 30
-MAX_SNIPPETS_PER_CHUNK = 20
+MAX_SNIPPETS_PER_CHUNK = 2000
 DEFAULT_DOWNLOAD_DIR = "/data/books"
 
 
@@ -139,21 +139,37 @@ def main() -> None:
                     )
                     snippets_emitted += 1
                     snippet_count += 1
+                    time.sleep(random.uniform(0.1, 0.5))  # Simulate processing delay 
+                    bytes_read = handle.tell()
+                    eta = _eta_seconds(start_time, bytes_read, total_bytes)
+                    store.update_doc_progress(
+                        task.task_id,
+                        progress_current=bytes_read,
+                        progress_total=total_bytes,
+                        done=False,
+                        status="RUNNING",
+                        metrics={
+                            "eta_seconds": eta,
+                            "snippets_emitted": snippet_count,
+                            "words_processed": words_processed,
+                        },
+                    )
 
-                bytes_read = handle.tell()
-                eta = _eta_seconds(start_time, bytes_read, total_bytes)
-                store.update_doc_progress(
-                    task.task_id,
-                    progress_current=bytes_read,
-                    progress_total=total_bytes,
-                    done=False,
-                    status="RUNNING",
-                    metrics={
-                        "eta_seconds": eta,
-                        "snippets_emitted": snippet_count,
-                        "words_processed": words_processed,
-                    },
-                )
+                if snippets_emitted == 0:
+                    bytes_read = handle.tell()
+                    eta = _eta_seconds(start_time, bytes_read, total_bytes)
+                    store.update_doc_progress(
+                        task.task_id,
+                        progress_current=bytes_read,
+                        progress_total=total_bytes,
+                        done=False,
+                        status="RUNNING",
+                        metrics={
+                            "eta_seconds": eta,
+                            "snippets_emitted": snippet_count,
+                            "words_processed": words_processed,
+                        },
+                    )
 
                 chunk_index += 1
                 line_number += len(lines)

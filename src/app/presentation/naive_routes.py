@@ -1,3 +1,4 @@
+import logging
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Query
@@ -10,6 +11,7 @@ from src.naive.compute_pi.storage import ComputePiStore
 from src.naive.document_analysis.storage import DocumentAnalysisStore
 
 router = APIRouter(prefix="/naive", tags=["naive"])
+logger = logging.getLogger(__name__)
 
 
 class NaivePiRequest(BaseModel):
@@ -105,8 +107,10 @@ def naive_document_analysis(body: NaiveDocRequest):
 @router.get("/document-analysis/status")
 def naive_document_status(task_id: str = Query(..., description="Naive task id")):
     store = _doc_store()
+    logger.info("Naive doc status requested", extra={"task_id": task_id})
     task = store.get_doc_task(task_id)
     if task is None:
+        logger.warning("Naive doc status missing task", extra={"task_id": task_id})
         raise HTTPException(status_code=404, detail="Task not found")
     percent = 0.0
     if task.progress_total:
@@ -125,11 +129,17 @@ def naive_document_status(task_id: str = Query(..., description="Naive task id")
 @router.get("/document-analysis/snippets")
 def naive_document_snippets(task_id: str = Query(...), after: int | None = None):
     store = _doc_store()
+    logger.info("Naive doc snippets requested", extra={"task_id": task_id, "after": after})
     task = store.get_doc_task(task_id)
     if task is None:
+        logger.warning("Naive doc snippets missing task", extra={"task_id": task_id})
         raise HTTPException(status_code=404, detail="Task not found")
     last_id = after if after is not None else task.last_snippet_id
     snippets = store.get_doc_snippets_since(task_id, last_id)
+    logger.info(
+        "Naive doc snippets fetched",
+        extra={"task_id": task_id, "count": len(snippets), "last_id": last_id},
+    )
     if snippets:
         store.mark_doc_snippets_delivered(task_id, snippets[-1]["id"])
     return {"snippets": snippets, "last_id": snippets[-1]["id"] if snippets else last_id}
