@@ -16,3 +16,7 @@ class TaskStatus(BaseModel):
         default=None,
         description="Optional task-specific metrics (e.g., ETA, token rate, sentiment).",
     )
+    metadata: dict[str, Any] | None = Field(
+        default=None,
+        description="Optional server-side metadata for status handling or diagnostics.",
+    )

@@ -1,4 +1,5 @@
 import logging
+import time
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Query
@@ -12,6 +13,7 @@ from src.naive.document_analysis.storage import DocumentAnalysisStore
 
 router = APIRouter(prefix="/naive", tags=["naive"])
 logger = logging.getLogger(__name__)
+_CPU_MS_NAIVE: dict[str, float] = {}
 
 
 class NaivePiRequest(BaseModel):
@@ -61,6 +63,7 @@ def naive_calculate_pi(body: NaivePiRequest):
 
 @router.get("/check_progress")
 def naive_check_progress(task_id: str = Query(..., description="Naive task id")):
+    start_cpu = time.process_time()
     store = _compute_store()
     task = store.get_task(task_id)
     if task is None:
@@ -68,6 +71,9 @@ def naive_check_progress(task_id: str = Query(..., description="Naive task id"))
     percent = 0.0
     if task.progress_total:
         percent = task.progress_current / task.progress_total
+    elapsed_ms = (time.process_time() - start_cpu) * 1000
+    total_ms = _CPU_MS_NAIVE.get(task_id, 0.0) + elapsed_ms
+    _CPU_MS_NAIVE[task_id] = total_ms
     return {
         "state": task.status,
         "progress": {
@@ -76,19 +82,31 @@ def naive_check_progress(task_id: str = Query(..., description="Naive task id"))
             "percentage": percent,
         },
         "metrics": task.metrics,
+        "metadata": {
+            "server_cpu_ms_naive": total_ms,
+            "server_sent_ts": time.time(),
+        },
     }
 
 
 @router.get("/task_result")
 def naive_task_result(task_id: str = Query(..., description="Naive task id")):
+    start_cpu = time.process_time()
     store = _compute_store()
     task = store.get_task(task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
+    elapsed_ms = (time.process_time() - start_cpu) * 1000
+    total_ms = _CPU_MS_NAIVE.get(task_id, 0.0) + elapsed_ms
+    _CPU_MS_NAIVE[task_id] = total_ms
     return {
         "task_id": task.task_id,
         "partial_result": task.result,
         "done": task.done,
+        "metadata": {
+            "server_cpu_ms_naive": total_ms,
+            "server_sent_ts": time.time(),
+        },
     }
 
 
@@ -106,6 +124,7 @@ def naive_document_analysis(body: NaiveDocRequest):
 
 @router.get("/document-analysis/status")
 def naive_document_status(task_id: str = Query(..., description="Naive task id")):
+    start_cpu = time.process_time()
     store = _doc_store()
     logger.info("Naive doc status requested", extra={"task_id": task_id})
     task = store.get_doc_task(task_id)
@@ -115,6 +134,9 @@ def naive_document_status(task_id: str = Query(..., description="Naive task id")
     percent = 0.0
     if task.progress_total:
         percent = task.progress_current / task.progress_total
+    elapsed_ms = (time.process_time() - start_cpu) * 1000
+    total_ms = _CPU_MS_NAIVE.get(task_id, 0.0) + elapsed_ms
+    _CPU_MS_NAIVE[task_id] = total_ms
     return {
         "state": task.status,
         "progress": {
@@ -123,11 +145,16 @@ def naive_document_status(task_id: str = Query(..., description="Naive task id")
             "percentage": percent,
         },
         "metrics": task.metrics,
+        "metadata": {
+            "server_cpu_ms_naive": total_ms,
+            "server_sent_ts": time.time(),
+        },
     }
 
 
 @router.get("/document-analysis/snippets")
 def naive_document_snippets(task_id: str = Query(...), after: int | None = None):
+    start_cpu = time.process_time()
     store = _doc_store()
     logger.info("Naive doc snippets requested", extra={"task_id": task_id, "after": after})
     task = store.get_doc_task(task_id)
@@ -142,4 +169,14 @@ def naive_document_snippets(task_id: str = Query(...), after: int | None = None)
     )
     if snippets:
         store.mark_doc_snippets_delivered(task_id, snippets[-1]["id"])
-    return {"snippets": snippets, "last_id": snippets[-1]["id"] if snippets else last_id}
+    elapsed_ms = (time.process_time() - start_cpu) * 1000
+    total_ms = _CPU_MS_NAIVE.get(task_id, 0.0) + elapsed_ms
+    _CPU_MS_NAIVE[task_id] = total_ms
+    return {
+        "snippets": snippets,
+        "last_id": snippets[-1]["id"] if snippets else last_id,
+        "metadata": {
+            "server_cpu_ms_naive": total_ms,
+            "server_sent_ts": time.time(),
+        },
+    }

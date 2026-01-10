@@ -109,6 +109,7 @@ class ApiClient {
   }
 
   async _getJson(url) {
+    const start = performance.now();
     try {
       const res = await fetch(url);
       const text = await res.text();
@@ -121,10 +122,12 @@ class ApiClient {
           data = null;
         }
       }
-      return { ok: res.ok, status: res.status, data, bytes };
+      const elapsedMs = performance.now() - start;
+      return { ok: res.ok, status: res.status, data, bytes, elapsedMs };
     } catch (error) {
+      const elapsedMs = performance.now() - start;
       log("error", "HTTP request failed", { url, error: String(error) });
-      return { ok: false, status: 0, data: null, bytes: 0, error: String(error) };
+      return { ok: false, status: 0, data: null, bytes: 0, elapsedMs, error: String(error) };
     }
   }
 }
@@ -168,6 +171,9 @@ function createPanelState() {
       messages: 0,
       bytes: 0,
       requests: 0,
+      latencyTotalMs: 0,
+      latencyCount: 0,
+      serverCpuMs: 0,
     },
   };
 }
@@ -209,6 +215,15 @@ class StreamingEngine {
       this.state.progress = progress;
       this.state.status = status?.state ?? "RUNNING";
       this.state.statusMetrics = status?.metrics ?? null;
+      const meta = status?.metadata;
+      if (meta?.server_sent_ts) {
+        const latencyMs = performance.now() - meta.server_sent_ts * 1000;
+        this.state.metrics.latencyTotalMs += latencyMs;
+        this.state.metrics.latencyCount += 1;
+      }
+      if (meta?.server_cpu_ms_ws !== undefined) {
+        this.state.metrics.serverCpuMs = meta.server_cpu_ms_ws;
+      }
     }
     if (message.type === "task.result_chunk") {
       const payload = message.payload;
@@ -277,11 +292,19 @@ class PollingEngine {
     try {
       const statusRes = await this.apiClient.getNaiveStatus(this.taskId);
       this._record(statusRes.bytes);
+      if (statusRes.elapsedMs !== undefined) {
+        this.state.metrics.latencyTotalMs += statusRes.elapsedMs;
+        this.state.metrics.latencyCount += 1;
+      }
       if (statusRes.ok && statusRes.data) {
         const progress = statusRes.data.progress?.percentage ?? 0;
         this.state.progress = progress;
         this.state.status = statusRes.data.state ?? "RUNNING";
         this.state.statusMetrics = statusRes.data.metrics ?? null;
+        const meta = statusRes.data.metadata;
+        if (meta?.server_cpu_ms_naive !== undefined) {
+          this.state.metrics.serverCpuMs = meta.server_cpu_ms_naive;
+        }
         this._maybeFirstUpdate(progress, statusRes.data.metrics);
       }
 
@@ -290,6 +313,10 @@ class PollingEngine {
         this.state.lastSnippetId
       );
       this._record(snippetRes.bytes);
+      if (snippetRes.elapsedMs !== undefined) {
+        this.state.metrics.latencyTotalMs += snippetRes.elapsedMs;
+        this.state.metrics.latencyCount += 1;
+      }
       if (snippetRes.ok && snippetRes.data) {
         const snippets = snippetRes.data.snippets ?? [];
         if (snippets.length) {
@@ -303,6 +330,10 @@ class PollingEngine {
           }
           this.state.lastSnippetId = snippetRes.data.last_id ?? this.state.lastSnippetId;
           this._maybeFirstUpdate(1, {});
+        }
+        const meta = snippetRes.data.metadata;
+        if (meta?.server_cpu_ms_naive !== undefined) {
+          this.state.metrics.serverCpuMs = meta.server_cpu_ms_naive;
         }
       }
 
@@ -343,15 +374,22 @@ class PollingEngine {
   }
 }
 
-function renderMetricsText(metrics) {
+function renderMetricsText(metrics, perf) {
   if (!metrics) return "metrics: —";
   const eta = metrics.eta_seconds !== undefined ? `${metrics.eta_seconds.toFixed(1)}s` : "—";
   const snippets = metrics.snippets_emitted ?? 0;
   const words = metrics.words_processed ?? 0;
-  return `metrics: eta ${eta} | snippets ${snippets} | words ${words}`;
+  const avgLatency =
+    perf.latencyCount > 0 ? formatMs(perf.latencyTotalMs / perf.latencyCount) : "—";
+  const totalLatency = formatMs(perf.latencyTotalMs);
+  const serverCpu = `${Math.round(perf.serverCpuMs)} ms`;
+  return `metrics: eta ${eta} | snippets ${snippets} | words ${words} | avg latency ${avgLatency} | total latency ${totalLatency} | server cpu ${serverCpu}`;
 }
 
 function renderSummary(container, data) {
+  const avgLatency =
+    data.latencyCount > 0 ? formatMs(data.latencyTotalMs / data.latencyCount) : "—";
+  const totalLatency = formatMs(data.latencyTotalMs);
   container.innerHTML = `
     <div>
       <dt>Time to first update</dt>
@@ -369,6 +407,18 @@ function renderSummary(container, data) {
       <dt>Bytes received</dt>
       <dd>${formatBytes(data.bytes)}</dd>
     </div>
+    <div>
+      <dt>Avg latency</dt>
+      <dd>${avgLatency}</dd>
+    </div>
+    <div>
+      <dt>Total latency</dt>
+      <dd>${totalLatency}</dd>
+    </div>
+    <div>
+      <dt>Server CPU ms</dt>
+      <dd>${Math.round(data.serverCpuMs)} ms</dd>
+    </div>
   `;
 }
 
@@ -385,6 +435,9 @@ function resetPanel(panel, state) {
     messages: 0,
     bytes: 0,
     requests: 0,
+    latencyTotalMs: 0,
+    latencyCount: 0,
+    serverCpuMs: 0,
   };
   panel.progress.style.width = "0%";
   panel.result.textContent = "—";
@@ -404,14 +457,20 @@ const pollingState = createPanelState();
 
 function updateUI() {
   UI.streaming.progress.style.width = `${Math.min(streamingState.progress * 100, 100)}%`;
-  UI.streaming.metrics.textContent = renderMetricsText(streamingState.statusMetrics);
+  UI.streaming.metrics.textContent = renderMetricsText(
+    streamingState.statusMetrics,
+    streamingState.metrics
+  );
   renderSummary(UI.streaming.summary, {
     ...streamingState.metrics,
     mode: "streaming",
   });
 
   UI.polling.progress.style.width = `${Math.min(pollingState.progress * 100, 100)}%`;
-  UI.polling.metrics.textContent = renderMetricsText(pollingState.statusMetrics);
+  UI.polling.metrics.textContent = renderMetricsText(
+    pollingState.statusMetrics,
+    pollingState.metrics
+  );
   renderSummary(UI.polling.summary, {
     ...pollingState.metrics,
     mode: "polling",

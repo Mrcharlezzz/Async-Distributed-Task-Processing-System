@@ -68,6 +68,7 @@ def test_check_progress_returns_status_payload(api_client):
         },
         "message": "working",
         "metrics": None,
+        "metadata": None,
     }
 
 

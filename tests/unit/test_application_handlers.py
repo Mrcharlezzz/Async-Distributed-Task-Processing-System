@@ -63,7 +63,16 @@ async def test_handle_status_event_updates_storage() -> None:
 
     await handler.handle_status_event(event)
 
-    assert storage.status_calls == [("task-1", status)]
+    assert len(storage.status_calls) == 1
+    task_id, stored_status = storage.status_calls[0]
+    assert task_id == "task-1"
+    assert stored_status.state == status.state
+    assert stored_status.progress == status.progress
+    assert stored_status.message == status.message
+    assert stored_status.metrics == status.metrics
+    assert stored_status.metadata is not None
+    assert "server_cpu_ms_ws" in stored_status.metadata
+    assert "server_sent_ts" in stored_status.metadata
     assert broadcaster.status_events == [event]
 
 

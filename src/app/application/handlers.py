@@ -1,4 +1,6 @@
 import logging
+import time
+from functools import wraps
 
 import inject
 
@@ -10,6 +12,26 @@ from src.app.domain.models.task_status import TaskStatus
 from src.app.domain.repositories import StorageRepository
 
 logger = logging.getLogger(__name__)
+_TERMINAL_STATES = {TaskState.COMPLETED.value, TaskState.FAILED.value, TaskState.CANCELLED.value}
+
+
+def ws_cpu_meter(func):
+    @wraps(func)
+    async def wrapper(self, event: TaskEvent):
+        start = time.process_time()
+        try:
+            return await func(self, event)
+        finally:
+            elapsed_ms = (time.process_time() - start) * 1000
+            total_ms = self._cpu_ws_total_ms.get(event.task_id, 0.0) + elapsed_ms
+            self._cpu_ws_total_ms[event.task_id] = total_ms
+            status_payload = event.payload.get("status")
+            if isinstance(status_payload, dict):
+                state = status_payload.get("state")
+                if state in _TERMINAL_STATES:
+                    self._cpu_ws_total_ms.pop(event.task_id, None)
+
+    return wrapper
 
 
 class TaskEventHandler:
@@ -23,12 +45,19 @@ class TaskEventHandler:
         self._broadcaster = broadcaster or inject.instance(TaskStatusBroadcaster)
         self._status_delta = status_delta
         self._status_cache: dict[str, float] = {}
+        self._cpu_ws_total_ms: dict[str, float] = {}
 
+    @ws_cpu_meter
     async def handle_status_event(self, event: TaskEvent) -> None:
         status_payload = event.payload.get("status")
         if not isinstance(status_payload, dict):
             raise ValueError("Status payload is missing or invalid")
         status = TaskStatus.model_validate(status_payload)
+        if status.metadata is None:
+            status.metadata = {}
+        status.metadata["server_cpu_ms_ws"] = self._cpu_ws_total_ms.get(event.task_id, 0.0)
+        status.metadata["server_sent_ts"] = time.time()
+        event.payload["status"] = status.model_dump(mode="json")
         pct = status.progress.percentage or 0.0
         last_pct = self._status_cache.get(event.task_id)
         is_terminal = status.state in {

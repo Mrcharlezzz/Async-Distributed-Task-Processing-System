@@ -95,6 +95,7 @@ class ApiClient {
   }
 
   async _getJson(url) {
+    const start = performance.now();
     try {
       const res = await fetch(url);
       const text = await res.text();
@@ -107,10 +108,12 @@ class ApiClient {
           data = null;
         }
       }
-      return { ok: res.ok, status: res.status, data, bytes };
+      const elapsedMs = performance.now() - start;
+      return { ok: res.ok, status: res.status, data, bytes, elapsedMs };
     } catch (error) {
+      const elapsedMs = performance.now() - start;
       log("error", "HTTP request failed", { url, error: String(error) });
-      return { ok: false, status: 0, data: null, bytes: 0, error: String(error) };
+      return { ok: false, status: 0, data: null, bytes: 0, elapsedMs, error: String(error) };
     }
   }
 }
@@ -180,6 +183,15 @@ class StreamingEngine {
       this.state.progress = progress;
       this.state.status = status?.state ?? "RUNNING";
       this.state.statusMetrics = status?.metrics ?? null;
+      const meta = status?.metadata;
+      if (meta?.server_sent_ts) {
+        const latencyMs = performance.now() - meta.server_sent_ts * 1000;
+        this.state.metrics.latencyTotalMs += latencyMs;
+        this.state.metrics.latencyCount += 1;
+      }
+      if (meta?.server_cpu_ms_ws !== undefined) {
+        this.state.metrics.serverCpuMs = meta.server_cpu_ms_ws;
+      }
     }
     if (message.type === "task.result_chunk") {
       const payload = message.payload;
@@ -225,11 +237,19 @@ class PollingEngine {
     try {
       const progressRes = await this.apiClient.getNaiveProgress(this.taskId);
       this._record(progressRes.bytes);
+      if (progressRes.elapsedMs !== undefined) {
+        this.state.metrics.latencyTotalMs += progressRes.elapsedMs;
+        this.state.metrics.latencyCount += 1;
+      }
       if (progressRes.ok && progressRes.data) {
         const progress = progressRes.data.progress?.percentage ?? 0;
         this.state.progress = progress;
         this.state.status = progressRes.data.state ?? "RUNNING";
         this.state.statusMetrics = progressRes.data.metrics ?? null;
+        const meta = progressRes.data.metadata;
+        if (meta?.server_cpu_ms_naive !== undefined) {
+          this.state.metrics.serverCpuMs = meta.server_cpu_ms_naive;
+        }
         this._maybeFirstUpdate(progressRes.data);
       } else if (progressRes.error) {
         log("error", "Polling progress failed", { clientId: this.state.id });
@@ -237,10 +257,18 @@ class PollingEngine {
 
       const resultRes = await this.apiClient.getNaiveResult(this.taskId);
       this._record(resultRes.bytes);
+      if (resultRes.elapsedMs !== undefined) {
+        this.state.metrics.latencyTotalMs += resultRes.elapsedMs;
+        this.state.metrics.latencyCount += 1;
+      }
       if (resultRes.ok && resultRes.data) {
         const payload = resultRes.data.partial_result ?? "";
         this.state.result = typeof payload === "string" ? payload : JSON.stringify(payload);
         this._maybeFirstUpdate(progressRes.data);
+        const meta = resultRes.data.metadata;
+        if (meta?.server_cpu_ms_naive !== undefined) {
+          this.state.metrics.serverCpuMs = meta.server_cpu_ms_naive;
+        }
         if (resultRes.data.done === true) {
           this.state.completed = true;
           this.state.metrics.totalMs = performance.now() - this.startTime;
@@ -336,6 +364,9 @@ const createClientState = (id) => ({
     messages: 0,
     requests: 0,
     bytes: 0,
+    latencyTotalMs: 0,
+    latencyCount: 0,
+    serverCpuMs: 0,
   },
   reset() {
     this.status = "IDLE";
@@ -349,6 +380,9 @@ const createClientState = (id) => ({
     this.metrics.messages = 0;
     this.metrics.requests = 0;
     this.metrics.bytes = 0;
+    this.metrics.latencyTotalMs = 0;
+    this.metrics.latencyCount = 0;
+    this.metrics.serverCpuMs = 0;
   },
 });
 
@@ -384,6 +418,9 @@ function aggregateMetrics(clients) {
     messages: clients.reduce((sum, client) => sum + client.metrics.messages, 0),
     requests: clients.reduce((sum, client) => sum + client.metrics.requests, 0),
     bytes: clients.reduce((sum, client) => sum + client.metrics.bytes, 0),
+    latencyTotalMs: clients.reduce((sum, client) => sum + client.metrics.latencyTotalMs, 0),
+    latencyCount: clients.reduce((sum, client) => sum + client.metrics.latencyCount, 0),
+    serverCpuMs: clients.reduce((max, client) => Math.max(max, client.metrics.serverCpuMs), 0),
   };
 }
 
@@ -396,6 +433,11 @@ function renderPanel(ui, mode, isStreaming) {
   updateClientNodes(ui.clients, mode.clients);
 
   const metricsAggregate = aggregateMetrics(mode.clients);
+  const avgLatency =
+    metricsAggregate.latencyCount > 0
+      ? formatMs(metricsAggregate.latencyTotalMs / metricsAggregate.latencyCount)
+      : "—";
+  const totalLatency = formatMs(metricsAggregate.latencyTotalMs);
   const metrics = [
     [
       "Time to first update",
@@ -407,6 +449,9 @@ function renderPanel(ui, mode, isStreaming) {
       isStreaming ? metricsAggregate.messages : metricsAggregate.requests,
     ],
     ["Bytes received", formatBytes(metricsAggregate.bytes)],
+    ["Avg latency", avgLatency],
+    ["Total latency", totalLatency],
+    ["Server CPU ms", `${Math.round(metricsAggregate.serverCpuMs)} ms`],
   ];
 
   ui.metrics.innerHTML = metrics
@@ -445,9 +490,7 @@ function updateClientNodes(container, clients) {
     const resultNode = node.querySelector(".client-result");
 
     if (metricsNode) {
-      metricsNode.textContent = client.statusMetrics
-        ? JSON.stringify(client.statusMetrics)
-        : "metrics: —";
+      metricsNode.textContent = formatClientMetrics(client);
     }
     if (progressNode) {
       progressNode.style.width = `${Math.min(client.progress * 100, 100)}%`;
@@ -477,6 +520,17 @@ function updateClientNodes(container, clients) {
       }
     }
   });
+}
+
+function formatClientMetrics(client) {
+  const workerMetrics = client.statusMetrics ? JSON.stringify(client.statusMetrics) : "—";
+  const avgLatency =
+    client.metrics.latencyCount > 0
+      ? formatMs(client.metrics.latencyTotalMs / client.metrics.latencyCount)
+      : "—";
+  const totalLatency = formatMs(client.metrics.latencyTotalMs);
+  const serverCpu = `${Math.round(client.metrics.serverCpuMs)} ms`;
+  return `metrics: ${workerMetrics} | avg latency: ${avgLatency} | total latency: ${totalLatency} | server cpu: ${serverCpu}`;
 }
 
 function render(state) {
