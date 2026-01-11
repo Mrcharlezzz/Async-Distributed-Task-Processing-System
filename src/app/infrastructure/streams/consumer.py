@@ -19,10 +19,12 @@ GROUP_API = "api"
 
 
 def consumer_name() -> str:
+    """Generate a unique consumer name for this process."""
     return f"{socket.gethostname()}:{os.getpid()}"
 
 
 class StreamsConsumer:
+    """Consume Redis stream events and dispatch to handlers."""
     def __init__(
         self,
         client: StreamsClient,
@@ -49,6 +51,7 @@ class StreamsConsumer:
         self._task: asyncio.Task[None] | None = None
 
     async def start(self) -> None:
+        """Start the consumer loop."""
         await self._client.ensure_consumer_group(
             stream=self._stream,
             group=self._group,
@@ -58,6 +61,7 @@ class StreamsConsumer:
         self._task = asyncio.create_task(self._run(), name="redis-stream-consumer")
 
     async def stop(self) -> None:
+        """Stop the consumer loop and close connections."""
         self._stop_event.set()
         if self._task is None:
             return
@@ -69,6 +73,7 @@ class StreamsConsumer:
         await self._client.close()
 
     async def _run(self) -> None:
+        """Read from the stream and dispatch events with retries."""
         backoff = 1.0
         while not self._stop_event.is_set():
             try:
@@ -95,6 +100,7 @@ class StreamsConsumer:
     async def _handle_response(
         self, response: Iterable[tuple[bytes, list[tuple[bytes, dict[bytes, bytes]]]]]
     ) -> None:
+        """Decode and dispatch events, then acknowledge messages."""
         for _stream, entries in response:
             for message_id, fields in entries:
                 try:
@@ -109,6 +115,7 @@ class StreamsConsumer:
                 await self._client.redis.xack(self._stream, self._group, message_id)
 
     async def _reclaim(self) -> None:
+        """Reclaim pending messages idle past the configured threshold."""
         try:
             await self._client.redis.xautoclaim(
                 self._stream,

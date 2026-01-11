@@ -9,8 +9,10 @@ from src.app.domain.models.task_status import TaskStatus
 
 
 class OrmMapper:
+    """Convert Celery AsyncResult objects into domain models."""
     @staticmethod
     def to_meta(async_result: AsyncResult) -> dict:
+        """Extract a metadata dict from a Celery result payload."""
         info = async_result.info
         if isinstance(info, dict):
             return info
@@ -20,6 +22,7 @@ class OrmMapper:
 
     @staticmethod
     def to_state(async_result: AsyncResult) -> TaskState:
+        """Translate Celery state into the domain task state."""
         if async_result.state == "PENDING":
             raise TaskNotFoundError(async_result.id)
         if async_result.state == "SENT":
@@ -36,6 +39,7 @@ class OrmMapper:
 
     @staticmethod
     def to_message(info: object) -> str | None:
+        """Normalize a status message from Celery info."""
         if isinstance(info, dict):
             return info.get("message")
         if info is None:
@@ -44,6 +48,7 @@ class OrmMapper:
 
     @staticmethod
     def to_status(async_result: AsyncResult) -> TaskStatus:
+        """Build a TaskStatus from a Celery AsyncResult."""
         info = async_result.info
         meta = OrmMapper.to_meta(async_result)
 
@@ -62,6 +67,7 @@ class OrmMapper:
 
     @staticmethod
     def to_result(async_result: AsyncResult) -> TaskResult:
+        """Build a TaskResult from a Celery AsyncResult."""
         if async_result.state == "PENDING":
             raise TaskNotFoundError(async_result.id)
 

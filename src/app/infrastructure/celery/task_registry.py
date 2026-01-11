@@ -28,6 +28,7 @@ class TaskRegistry:
         }
 
     def route_for_task_type(self, task_type: TaskType) -> TaskRoute:
+        """Return routing info for a task type."""
         try:
             return self._registry[task_type]
         except KeyError as exc:

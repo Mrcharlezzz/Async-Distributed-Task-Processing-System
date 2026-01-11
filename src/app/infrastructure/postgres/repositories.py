@@ -33,6 +33,7 @@ class PostgresStorageRepository(StorageRepository):
         self._orm = orm
 
     async def create_task(self, user_id: str, task: Task) -> str:
+        """Persist a new task and return its id."""
         if task.id is None:
             task.id = uuid4().hex
 
@@ -48,6 +49,7 @@ class PostgresStorageRepository(StorageRepository):
         return task.id
 
     async def get_task(self, user_id: str, task_id: str) -> Task | None:
+        """Fetch a task by id and enforce ownership."""
         async with self._orm.session_factory() as session:
             result = await session.execute(
                 select(TaskRow)
@@ -68,10 +70,12 @@ class PostgresStorageRepository(StorageRepository):
         return OrmMapper.to_domain_task(task_row)
 
     async def get_status(self, user_id: str, task_id: str) -> TaskStatus:
+        """Fetch task status by id."""
         task = await self.get_task(user_id, task_id)
         return task.status
 
     async def get_result(self, user_id: str, task_id: str) -> TaskResult:
+        """Fetch task result by id."""
         async with self._orm.session_factory() as session:
             result = await session.execute(
                 select(TaskRow)
@@ -95,6 +99,7 @@ class PostgresStorageRepository(StorageRepository):
         limit: int = 50,
         offset: int = 0,
     ) -> list[TaskView]:
+        """List tasks for a user with optional filters."""
         statement = (
             select(TaskRow)
             .options(selectinload(TaskRow.task_metadata), selectinload(TaskRow.status))
@@ -119,6 +124,7 @@ class PostgresStorageRepository(StorageRepository):
         status: TaskStatus,
         metadata: TaskMetadata | None = None,
     ) -> None:
+        """Update task status and optional metadata."""
         async with self._orm.session_factory() as session:
             async with session.begin():
                 # Ensure the task exists before mutating status/metadata.
@@ -143,6 +149,7 @@ class PostgresStorageRepository(StorageRepository):
         result: TaskResult,
         finished_at: datetime | None = None,
     ) -> None:
+        """Persist the task result and finished timestamp."""
         async with self._orm.session_factory() as session:
             async with session.begin():
                 # Enforce task existence; results are keyed to the task id.

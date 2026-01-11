@@ -8,6 +8,7 @@ from src.app.infrastructure.streams.serializers import encode_event
 
 
 class StreamsPublisher:
+    """Async publisher for Redis streams."""
     def __init__(self, client: StreamsClient, stream: str) -> None:
         self._client = client
         self._stream = stream
@@ -19,6 +20,7 @@ class StreamsPublisher:
         maxlen: int | None = None,
         approximate: bool = True,
     ) -> None:
+        """Publish one or more task events."""
         batch: Iterable[TaskEvent]
         if isinstance(events, TaskEvent):
             batch = [events]
@@ -35,6 +37,7 @@ class StreamsPublisher:
 
 
 class StreamsSyncPublisher:
+    """Sync publisher for Redis streams."""
     def __init__(self, client: SyncStreamsClient, stream: str) -> None:
         self._client = client
         self._stream = stream
@@ -46,6 +49,7 @@ class StreamsSyncPublisher:
         maxlen: int | None = None,
         approximate: bool = True,
     ) -> None:
+        """Publish one or more task events."""
         batch: Iterable[TaskEvent]
         if isinstance(events, TaskEvent):
             batch = [events]
@@ -61,4 +65,5 @@ class StreamsSyncPublisher:
             )
 
     def close(self) -> None:
+        """Close the underlying client connection."""
         self._client.close()

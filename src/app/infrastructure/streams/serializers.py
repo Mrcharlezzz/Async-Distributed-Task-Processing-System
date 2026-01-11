@@ -9,10 +9,12 @@ from pydantic import ValidationError
 from src.app.domain.events.task_event import EventType, TaskEvent
 
 def _as_str(value: Any) -> str:
+    """Normalize a value into a string."""
     return str(value)
 
 
 def encode_event(event: TaskEvent) -> dict[str, str | bytes]:
+    """Serialize a TaskEvent for Redis streams."""
     return {
         "event_id": event.event_id,
         "type": event.type.value,
@@ -23,6 +25,7 @@ def encode_event(event: TaskEvent) -> dict[str, str | bytes]:
 
 
 def decode_event(fields: dict[str, Any]) -> TaskEvent:
+    """Deserialize a TaskEvent from Redis stream fields."""
     raw_payload = fields.get("payload")
     payload_str = _as_str(raw_payload)
     try:

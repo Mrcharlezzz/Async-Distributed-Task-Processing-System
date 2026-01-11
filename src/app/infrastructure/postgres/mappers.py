@@ -23,8 +23,10 @@ from src.app.infrastructure.postgres.orm import (
 
 
 class OrmMapper:
+    """Map between ORM rows and domain models."""
     @staticmethod
     def to_task_row(user_id: str, task: Task) -> TaskRow:
+        """Create a TaskRow from a domain task."""
         if task.id is None:
             raise ValueError("Task id is required to persist TaskRow.")
         return TaskRow(
@@ -35,6 +37,7 @@ class OrmMapper:
 
     @staticmethod
     def to_payload_row(task_id: str, payload: TaskPayload) -> TaskPayloadRow:
+        """Create a payload row from a task payload."""
         return TaskPayloadRow(
             task_id=task_id,
             payload=payload.model_dump(),
@@ -42,6 +45,7 @@ class OrmMapper:
 
     @staticmethod
     def to_metadata_row(task_id: str, metadata: TaskMetadata) -> TaskMetadataRow:
+        """Create a metadata row from task metadata."""
         return TaskMetadataRow(
             task_id=task_id,
             created_at=metadata.created_at,
@@ -53,6 +57,7 @@ class OrmMapper:
 
     @staticmethod
     def to_status_row(task_id: str, status: TaskStatus) -> TaskStatusRow:
+        """Create a status row from task status."""
         progress = status.progress
         return TaskStatusRow(
             task_id=task_id,
@@ -67,6 +72,7 @@ class OrmMapper:
 
     @staticmethod
     def to_result_row(task_id: str, result: TaskResult) -> TaskResultRow:
+        """Create a result row from task result."""
         return TaskResultRow(
             task_id=task_id,
             data=result.data,
@@ -77,6 +83,7 @@ class OrmMapper:
 
     @staticmethod
     def to_domain_task(row: TaskRow) -> Task:
+        """Create a domain Task from ORM rows."""
         payload_data = row.payload.payload if row.payload else {}
         payload = OrmMapper._payload_from_row(row.task_type, payload_data)
         status = OrmMapper.to_domain_status(row)
@@ -94,6 +101,7 @@ class OrmMapper:
 
     @staticmethod
     def to_domain_metadata(row: TaskRow) -> TaskMetadata:
+        """Create TaskMetadata from ORM rows."""
         if row.task_metadata is None:
             return TaskMetadata()
         return TaskMetadata(
@@ -106,6 +114,7 @@ class OrmMapper:
 
     @staticmethod
     def to_domain_status(row: TaskRow) -> TaskStatus:
+        """Create TaskStatus from ORM rows."""
         if row.status is None:
             return TaskStatus(state=TaskState.QUEUED, progress=TaskProgress())
         progress = TaskProgress(
@@ -123,6 +132,7 @@ class OrmMapper:
 
     @staticmethod
     def to_task_view(row: TaskRow) -> TaskView:
+        """Create a TaskView from ORM rows."""
         return TaskView(
             id=row.id,
             task_type=row.task_type,
@@ -132,6 +142,7 @@ class OrmMapper:
 
     @staticmethod
     def to_domain_result(row: TaskRow) -> TaskResult:
+        """Create TaskResult from ORM rows."""
         result_row = row.result
         return TaskResult(
             task_id=row.id,
@@ -143,6 +154,7 @@ class OrmMapper:
 
     @staticmethod
     def _payload_from_row(task_type: TaskType, payload: dict) -> TaskPayload:
+        """Cast payload dict into the correct payload type."""
         if task_type == TaskType.COMPUTE_PI:
             return ComputePiPayload(**payload)
         if task_type == TaskType.DOCUMENT_ANALYSIS:

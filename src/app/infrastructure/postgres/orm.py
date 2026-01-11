@@ -16,10 +16,12 @@ from src.app.domain.models.task_type import TaskType
 
 
 class Base(DeclarativeBase):
+    """Declarative base for SQLAlchemy models."""
     pass
 
 
 class TaskRow(Base):
+    """ORM row for the tasks table."""
     __tablename__ = "tasks"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
@@ -43,6 +45,7 @@ class TaskRow(Base):
 
 
 class TaskPayloadRow(Base):
+    """ORM row for task payload storage."""
     __tablename__ = "task_payloads"
 
     task_id: Mapped[str] = mapped_column(
@@ -54,6 +57,7 @@ class TaskPayloadRow(Base):
 
 
 class TaskMetadataRow(Base):
+    """ORM row for task metadata storage."""
     __tablename__ = "task_metadata"
 
     task_id: Mapped[str] = mapped_column(
@@ -69,6 +73,7 @@ class TaskMetadataRow(Base):
 
 
 class TaskStatusRow(Base):
+    """ORM row for task status storage."""
     __tablename__ = "task_statuses"
 
     task_id: Mapped[str] = mapped_column(
@@ -88,6 +93,7 @@ class TaskStatusRow(Base):
 
 
 class TaskResultRow(Base):
+    """ORM row for task result storage."""
     __tablename__ = "task_results"
 
     task_id: Mapped[str] = mapped_column(
@@ -114,8 +120,10 @@ class PostgresOrm:
 
     @property
     def engine(self) -> AsyncEngine:
+        """Return the configured async engine."""
         return self._engine
 
     @property
     def session_factory(self) -> async_sessionmaker[AsyncSession]:
+        """Return the async session factory."""
         return self._session_factory

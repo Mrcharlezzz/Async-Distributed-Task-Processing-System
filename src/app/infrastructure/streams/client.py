@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 class StreamsClient:
+    """Async Redis Streams client wrapper."""
     def __init__(
         self,
         url: str,
@@ -32,6 +33,7 @@ class StreamsClient:
 
     @property
     def redis(self) -> Redis:
+        """Expose the underlying async Redis client."""
         return self._redis
 
     async def ensure_consumer_group(
@@ -41,6 +43,7 @@ class StreamsClient:
         group: str,
         start_id: str = "$",
     ) -> None:
+        """Create a consumer group if it does not already exist."""
         try:
             await self._redis.xgroup_create(
                 name=stream,
@@ -60,10 +63,12 @@ class StreamsClient:
             raise
 
     async def close(self) -> None:
+        """Close the underlying Redis connection."""
         await self._redis.aclose()
 
 
 class SyncStreamsClient:
+    """Sync Redis Streams client wrapper."""
     def __init__(
         self,
         url: str,
@@ -85,7 +90,9 @@ class SyncStreamsClient:
 
     @property
     def redis(self) -> SyncRedis:
+        """Expose the underlying sync Redis client."""
         return self._redis
 
     def close(self) -> None:
+        """Close the underlying Redis connection."""
         self._redis.close()
