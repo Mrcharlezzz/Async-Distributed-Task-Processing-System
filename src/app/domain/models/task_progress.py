@@ -2,6 +2,7 @@ from pydantic import BaseModel, Field
 
 
 class TaskProgress(BaseModel):
+    """Progress snapshot for a running task."""
     current: int | None = Field(default=None, description="Units completed so far.")
     total: int | None = Field(default=None, description="Total units expected.")
     percentage: float | None = Field(

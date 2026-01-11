@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 
 
 class ExecutionConfig(BaseModel):
+    """Optional execution overrides for a task."""
     """Execution-related configuration attached to a task."""
 
     time_limit_seconds: int | None = Field(

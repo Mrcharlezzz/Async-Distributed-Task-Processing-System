@@ -9,6 +9,7 @@ from src.app.domain.models.task_metadata import TaskMetadata
 
 
 class TaskResult(BaseModel):
+    """Result payload for a completed task."""
     task_id: str = Field(description="Identifier of the task.")
     task_metadata: TaskMetadata | None = Field(
         default=None, description="Lifecycle metadata for the task."

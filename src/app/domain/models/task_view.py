@@ -6,6 +6,7 @@ from src.app.domain.models.task_type import TaskType
 
 
 class TaskView(BaseModel):
+    """Read-only projection of task information for list views."""
     """Compact representation used for task listing screens."""
 
     id: str = Field(description="Unique task identifier.")

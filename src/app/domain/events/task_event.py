@@ -12,12 +12,14 @@ from src.app.domain.models.task_status import TaskStatus
 
 
 class EventType(str, Enum):
+    """Event types emitted over the task event stream."""
     TASK_STATUS = "task.status"
     TASK_RESULT_CHUNK = "task.result_chunk"
     TASK_RESULT = "task.result"
 
 
 class TaskEvent(BaseModel):
+    """Envelope for task events transported over Redis Streams."""
     event_id: str
     type: EventType
     task_id: str
@@ -27,6 +29,7 @@ class TaskEvent(BaseModel):
 
     @classmethod
     def status(cls, task_id: str, status_snapshot: TaskStatus) -> "TaskEvent":
+        """Create a status event from a TaskStatus snapshot."""
         return cls(
             event_id=str(uuid4()),
             type=EventType.TASK_STATUS,
@@ -43,6 +46,7 @@ class TaskEvent(BaseModel):
         data: Any,
         is_last: bool = False,
     ) -> "TaskEvent":
+        """Create a chunk event for incremental result streaming."""
         safe_data = data
         if isinstance(data, (bytes, bytearray, memoryview)):
             safe_data = base64.b64encode(bytes(data)).decode("ascii")
@@ -56,6 +60,7 @@ class TaskEvent(BaseModel):
 
     @classmethod
     def result(cls, task_id: str, result_snapshot: dict[str, Any]) -> "TaskEvent":
+        """Create a final result event."""
         return cls(
             event_id=str(uuid4()),
             type=EventType.TASK_RESULT,

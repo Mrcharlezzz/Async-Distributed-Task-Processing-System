@@ -7,6 +7,7 @@ from src.app.domain.models.task_state import TaskState
 
 
 class TaskStatus(BaseModel):
+    """Status snapshot for a task."""
     state: TaskState = Field(description="Current lifecycle state of the task.")
     progress: TaskProgress = Field(description="Progress information for the task.")
     message: str | None = Field(

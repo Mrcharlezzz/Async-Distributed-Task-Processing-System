@@ -8,6 +8,7 @@ class TaskPayload(BaseModel):
 
 
 class DocumentAnalysisPayload(TaskPayload):
+    """Payload for document analysis tasks."""
     document_path: str | None = Field(
         default=None,
         description="Local path to the document to analyze.",
@@ -22,4 +23,5 @@ class DocumentAnalysisPayload(TaskPayload):
 
 
 class ComputePiPayload(TaskPayload):
+    """Payload for computing digits of pi."""
     digits: int = Field(description="Number of digits to compute.")

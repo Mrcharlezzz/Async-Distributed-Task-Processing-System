@@ -33,7 +33,7 @@ app.add_event_handler("startup", _start_consumer)
 app.add_event_handler("shutdown", _stop_consumer)
 
 from src.app.presentation.routes import router as api_router  # noqa: E402
-from src.app.presentation.naive_routes import router as naive_router  # noqa: E402
+from src.app.presentation.naive_worker_routes import router as naive_router  # noqa: E402
 
 app.include_router(api_router, prefix="")
 app.include_router(naive_router, prefix="")

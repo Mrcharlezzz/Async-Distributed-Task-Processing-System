@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 
 
 class TaskMetadata(BaseModel):
+    """Timestamps and optional custom metadata for a task."""
     """Common metadata about a task lifecycle."""
 
     created_at: datetime | None = Field(

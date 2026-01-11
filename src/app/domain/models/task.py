@@ -8,6 +8,7 @@ from src.app.domain.models.task_type import TaskType
 
 
 class Task(BaseModel):
+    """Aggregate domain model for a task."""
     id: str | None = Field(default=None, description="Unique task identifier.")
     task_type: TaskType = Field(description="Type of task being executed.")
     payload: SerializeAsAny[TaskPayload] = Field(
