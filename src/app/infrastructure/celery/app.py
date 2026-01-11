@@ -10,8 +10,6 @@ celery_app = Celery(
     broker=_settings.REDIS_URL,
     backend=_settings.REDIS_URL,
 )
-celery_app.autodiscover_tasks(["src.app.worker"])
-
 celery_app.conf.update(
     task_ignore_result=False,
     result_expires=_settings.RESULT_TTL_SECONDS,

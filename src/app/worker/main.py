@@ -9,6 +9,7 @@ def main() -> None:
     concurrency = os.getenv("CELERY_CONCURRENCY", "2")
     queues = os.getenv("CELERY_QUEUES", "celery,doc-tasks")
     configure_stream_publisher()
+    celery_app.autodiscover_tasks(["src.app.worker"])
     celery_app.worker_main(
         [
             "worker",
