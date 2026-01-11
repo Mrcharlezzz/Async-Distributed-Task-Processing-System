@@ -16,6 +16,7 @@ _TERMINAL_STATES = {TaskState.COMPLETED.value, TaskState.FAILED.value, TaskState
 
 
 def ws_cpu_meter(func):
+    """Decorator to accumulate CPU time spent handling WS events."""
     @wraps(func)
     async def wrapper(self, event: TaskEvent):
         start = time.process_time()
@@ -36,6 +37,7 @@ def ws_cpu_meter(func):
 
 
 class TaskEventHandler:
+    """Apply task events to storage and broadcast to clients."""
     def __init__(
         self,
         storage: StorageRepository | None = None,
@@ -50,6 +52,7 @@ class TaskEventHandler:
 
     @ws_cpu_meter
     async def handle_status_event(self, event: TaskEvent) -> None:
+        """Persist status updates and broadcast them."""
         status_payload = event.payload.get("status")
         if not isinstance(status_payload, dict):
             raise ValueError("Status payload is missing or invalid")
@@ -74,6 +77,7 @@ class TaskEventHandler:
         await self._broadcaster.broadcast_status(event)
 
     async def handle_result_event(self, event: TaskEvent) -> None:
+        """Persist the final task result."""
         result_payload = event.payload.get("result")
         if isinstance(result_payload, dict):
             result_data = dict(result_payload)
@@ -85,6 +89,7 @@ class TaskEventHandler:
 
     @ws_cpu_meter
     async def handle_result_chunk_event(self, event: TaskEvent) -> None:
+        """Broadcast a result chunk to connected clients."""
         payload = event.payload
         if not isinstance(payload, dict):
             raise ValueError("Result chunk payload is missing or invalid")

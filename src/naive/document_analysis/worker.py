@@ -17,6 +17,7 @@ DEFAULT_DOWNLOAD_DIR = "/data/books"
 
 
 def _resolve_document_path(document_path: str | None, document_url: str | None) -> str | None:
+    """Resolve a local path for the document or infer it from the URL."""
     if document_url:
         parsed = urlparse(document_url)
         filename = os.path.basename(parsed.path) or "document.txt"
@@ -25,6 +26,7 @@ def _resolve_document_path(document_path: str | None, document_url: str | None) 
 
 
 def _ensure_document(document_path: str, document_url: str | None) -> None:
+    """Download the document if a URL is provided and the file is missing."""
     if not document_url:
         return
     if os.path.exists(document_path):
@@ -36,6 +38,7 @@ def _ensure_document(document_path: str, document_url: str | None) -> None:
 
 
 def _mark_failed(store: DocumentAnalysisStore, task_id: str) -> None:
+    """Persist a failed status for a document analysis task."""
     store.update_doc_progress(
         task_id,
         progress_current=0,
@@ -47,6 +50,7 @@ def _mark_failed(store: DocumentAnalysisStore, task_id: str) -> None:
 
 
 def main() -> None:
+    """Run the naive document analysis worker loop against the SQLite queue."""
     db_path = "/data/naive.sqlite"
     idle_sleep = 0.2
 
@@ -54,6 +58,7 @@ def main() -> None:
     store.init_db()
 
     while True:
+        # Poll for the next queued task; sleep briefly when idle.
         task = store.claim_next_doc_task()
         if task is None:
             time.sleep(idle_sleep)
@@ -79,6 +84,7 @@ def main() -> None:
             chunk_index = 0
             line_number = 1
 
+            # Initial running status so the client sees task start immediately.
             store.update_doc_progress(
                 task.task_id,
                 progress_current=0,
@@ -95,12 +101,14 @@ def main() -> None:
             )
 
             while True:
+                # Read a variable number of lines to simulate uneven workload.
                 lines_to_read = random.randint(MIN_LINES_PER_CHUNK, MAX_LINES_PER_CHUNK)
                 chunk_start = handle.tell()
                 lines = list(itertools.islice(handle, lines_to_read))
                 if not lines:
                     break
 
+                # Decode once per chunk, then search in-memory.
                 text_lines = [line.decode("utf-8", errors="ignore") for line in lines]
                 chunk_text = "".join(text_lines)
                 line_offsets = list(
@@ -116,6 +124,7 @@ def main() -> None:
                     snippet = chunk_text[snippet_start:snippet_end]
                     line_offset = bisect.bisect_right(line_offsets, pos) - 1
                     snippet_line = line_number + line_offset
+                    # Persist each snippet for the polling client to fetch.
                     store.append_doc_snippet(
                         task.task_id,
                         keyword=match.group(0),
@@ -125,8 +134,10 @@ def main() -> None:
                     )
                     snippets_emitted += 1
                     snippet_count += 1
+                    # Add jitter after each snippet to show uneven streaming.
                     time.sleep(random.uniform(0.1, 0.5))  # Simulate processing delay
                     bytes_read = min(chunk_start + match.start(), total_bytes)
+                    # Update progress alongside snippet emission.
                     store.update_doc_progress(
                         task.task_id,
                         progress_current=bytes_read,
@@ -139,6 +150,7 @@ def main() -> None:
                     )
 
                 if snippets_emitted == 0:
+                    # Even with no hits, advance progress to avoid stalling.
                     bytes_read = handle.tell()
                     store.update_doc_progress(
                         task.task_id,
@@ -154,6 +166,7 @@ def main() -> None:
                 chunk_index += 1
                 line_number += len(lines)
 
+            # Mark completion after scanning the full file.
             store.update_doc_progress(
                 task.task_id,
                 progress_current=total_bytes,

@@ -33,6 +33,7 @@ def _emit_snippet(
     chunk_index: int,
     document_path: str,
 ) -> None:
+    """Emit a snippet result chunk with its keyword and location."""
     pos = match.start()
     snippet_start = max(pos - SNIPPET_RADIUS, 0)
     snippet_end = min(pos + len(match.group(0)) + SNIPPET_RADIUS, len(chunk_text))
@@ -54,6 +55,7 @@ def _emit_snippet(
 
 
 def _resolve_document_path(document_path: str | None, document_url: str | None) -> str | None:
+    """Resolve a local path for a document or infer it from the URL."""
     if document_url:
         parsed = urlparse(document_url)
         filename = os.path.basename(parsed.path) or "document.txt"
@@ -62,6 +64,7 @@ def _resolve_document_path(document_path: str | None, document_url: str | None) 
 
 
 def _ensure_document(document_path: str, document_url: str | None) -> None:
+    """Download the document if a URL is provided and the file is missing."""
     if not document_url:
         return
     if os.path.exists(document_path):
@@ -73,6 +76,7 @@ def _ensure_document(document_path: str, document_url: str | None) -> None:
 
 
 def _report_failed(reporter: TaskReporter, message: str) -> dict:
+    """Emit a failed status and return an error payload."""
     logger.error("Document analysis failed: %s", message)
     status = TaskStatus(
         state=TaskState.FAILED,
@@ -91,6 +95,7 @@ def _report_running_status(
     total_bytes: int,
     snippets_emitted: int,
 ) -> None:
+    """Report progress based on bytes read and snippets emitted."""
     progress = bytes_read / total_bytes if total_bytes else 1.0
     reporter.report_status(
         TaskStatus(
@@ -109,6 +114,7 @@ def _report_running_status(
 
 @celery_app.task(name="document_analysis", bind=True)
 def document_analysis(self, payload: dict) -> dict:
+    """Scan a document for keywords and stream snippet hits."""
     reporter = TaskReporter(self.request.id)
     payload_data = payload.get("payload") or {}
     document_path = payload_data.get("document_path")
@@ -151,12 +157,14 @@ def document_analysis(self, payload: dict) -> dict:
     with reporter.report_result_chunk(batch_size=1) as chunks:
         with open(document_path, "rb") as handle:
             while True:
+                # Read a variable number of lines to simulate uneven workload.
                 lines_to_read = random.randint(MIN_LINES_PER_CHUNK, MAX_LINES_PER_CHUNK)
                 chunk_start = handle.tell()
                 lines = list(itertools.islice(handle, lines_to_read))
                 if not lines:
                     break
 
+                # Decode once per chunk, then search in-memory.
                 text_lines = [line.decode("utf-8", errors="ignore") for line in lines]
                 chunk_text = "".join(text_lines)
                 line_offsets = list(
@@ -177,6 +185,7 @@ def document_analysis(self, payload: dict) -> dict:
                     )
                     snippets_emitted += 1
                     total_snippets_emitted += 1
+                    # Add jitter after each snippet to show uneven streaming.
                     time.sleep(random.uniform(0.1, 0.5))  # Simulate processing delay
                     bytes_read = min(chunk_start + match.start(), total_bytes)
                     _report_running_status(
@@ -187,6 +196,7 @@ def document_analysis(self, payload: dict) -> dict:
                     )
 
                 if snippets_emitted == 0:
+                    # Even with no hits, advance progress to avoid stalling.
                     _report_running_status(
                         reporter,
                         bytes_read=handle.tell(),
@@ -207,6 +217,7 @@ def document_analysis(self, payload: dict) -> dict:
             },
         )
     )
+    # Final summary result is stored once for retrieval.
     reporter.report_result(
         {
             "task_id": self.request.id,

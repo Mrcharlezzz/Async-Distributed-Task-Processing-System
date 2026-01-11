@@ -9,11 +9,13 @@ from src.naive.compute_pi.storage import ComputePiStore
 
 
 def _compute_pi(digits: int) -> str:
+    """Return pi to the requested number of digits."""
     mp.dps = digits
     return str(mp.pi)
 
 
 def main() -> None:
+    """Run the naive compute_pi worker loop against the SQLite queue."""
     db_path = "/data/naive.sqlite"
     idle_sleep = 0.2
 
@@ -21,11 +23,13 @@ def main() -> None:
     store.init_db()
 
     while True:
+        # Poll for the next queued task; sleep briefly when idle.
         task = store.claim_next_task()
         if task is None:
             time.sleep(idle_sleep)
             continue
 
+        # Compute the full value once, then stream progress by appending digits.
         pi_value = _compute_pi(task.digits)
         total = len(pi_value)
         result = ""
@@ -38,6 +42,7 @@ def main() -> None:
             elapsed = time.monotonic() - start_time
             avg_time = elapsed / idx if idx else 0.0
             eta_seconds = remaining * avg_time
+            # Store progress and partial result for the polling client.
             store.update_progress(
                 task.task_id,
                 progress_current=idx,
@@ -52,6 +57,7 @@ def main() -> None:
                 },
             )
 
+        # Mark completion and persist the final result.
         store.update_progress(
             task.task_id,
             progress_current=total,

@@ -21,9 +21,6 @@ logger = logging.getLogger(__name__)
 
 _settings = ApiSettings()
 
-_task_service = TaskService()
-
-
 def get_task_service() -> TaskService:
     return TaskService()
 
@@ -42,13 +39,13 @@ class CalculatePiRequest(BaseModel):
         }
     },
 )
-async def calculate_pi(body: CalculatePiRequest):
+async def calculate_pi(body: CalculatePiRequest, svc: TaskService = Depends(get_task_service)):
     """
     Queues the `compute_pi` task.
     """
     try:
         payload = ComputePiPayload(digits=body.n)
-        task = await _task_service.create_task(TaskType.COMPUTE_PI, payload)
+        task = await svc.create_task(TaskType.COMPUTE_PI, payload)
         return task
     except Exception as exc:
         logger.exception("Failed to enqueue task compute_pi: %s", exc)
@@ -75,12 +72,15 @@ async def calculate_pi(body: CalculatePiRequest):
         },
     },
 )
-async def check_progress(task_id: str = Query(..., description="Celery task id")):
+async def check_progress(
+    task_id: str = Query(..., description="Celery task id"),
+    svc: TaskService = Depends(get_task_service),
+):
     """
     Reads the Celery result backend for the given task id.
     """
     try:
-        status = await _task_service.get_status(task_id)
+        status = await svc.get_status(task_id)
         return status
     except TaskNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -118,12 +118,15 @@ async def create_doc_task(
         },
     },
 )
-async def get_task_result(task_id: str = Query(..., description="Celery task id")):
+async def get_task_result(
+    task_id: str = Query(..., description="Celery task id"),
+    svc: TaskService = Depends(get_task_service),
+):
     """
     Reads the Celery result backend for the given task id.
     """
     try:
-        result = await _task_service.get_result(task_id)
+        result = await svc.get_result(task_id)
         return result
     except TaskNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
