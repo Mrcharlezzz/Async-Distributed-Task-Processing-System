@@ -376,24 +376,26 @@ class PollingEngine {
 
 function renderMetricsText(metrics, perf) {
   if (!metrics) return "metrics: —";
-  const eta = metrics.eta_seconds !== undefined ? `${metrics.eta_seconds.toFixed(1)}s` : "—";
   const snippets = metrics.snippets_emitted ?? 0;
-  const words = metrics.words_processed ?? 0;
-  const avgLatency =
-    perf.latencyCount > 0 ? formatMs(perf.latencyTotalMs / perf.latencyCount) : "—";
-  const totalLatency = formatMs(perf.latencyTotalMs);
-  const serverCpu = `${Math.round(perf.serverCpuMs)} ms`;
-  return `metrics: eta ${eta} | snippets ${snippets} | words ${words} | avg latency ${avgLatency} | total latency ${totalLatency} | server cpu ${serverCpu}`;
+  return `metrics: snippets ${snippets}`;
 }
 
 function renderSummary(container, data) {
   const avgLatency =
     data.latencyCount > 0 ? formatMs(data.latencyTotalMs / data.latencyCount) : "—";
-  const totalLatency = formatMs(data.latencyTotalMs);
+  const cumulativeLatency = formatMs(data.latencyTotalMs);
   container.innerHTML = `
     <div>
-      <dt>Time to first update</dt>
-      <dd>${data.firstUpdateMs ? formatMs(data.firstUpdateMs) : "—"}</dd>
+      <dt>Server CPU ms</dt>
+      <dd>${Math.round(data.serverCpuMs)} ms</dd>
+    </div>
+    <div>
+      <dt>Cumulative delivery latency</dt>
+      <dd>${cumulativeLatency}</dd>
+    </div>
+    <div>
+      <dt>Avg latency</dt>
+      <dd>${avgLatency}</dd>
     </div>
     <div>
       <dt>Total duration</dt>
@@ -406,18 +408,6 @@ function renderSummary(container, data) {
     <div>
       <dt>Bytes received</dt>
       <dd>${formatBytes(data.bytes)}</dd>
-    </div>
-    <div>
-      <dt>Avg latency</dt>
-      <dd>${avgLatency}</dd>
-    </div>
-    <div>
-      <dt>Total latency</dt>
-      <dd>${totalLatency}</dd>
-    </div>
-    <div>
-      <dt>Server CPU ms</dt>
-      <dd>${Math.round(data.serverCpuMs)} ms</dd>
     </div>
   `;
 }

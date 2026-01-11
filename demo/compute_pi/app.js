@@ -437,21 +437,17 @@ function renderPanel(ui, mode, isStreaming) {
     metricsAggregate.latencyCount > 0
       ? formatMs(metricsAggregate.latencyTotalMs / metricsAggregate.latencyCount)
       : "—";
-  const totalLatency = formatMs(metricsAggregate.latencyTotalMs);
+  const cumulativeLatency = formatMs(metricsAggregate.latencyTotalMs);
   const metrics = [
-    [
-      "Time to first update",
-      metricsAggregate.firstUpdateMs ? formatMs(metricsAggregate.firstUpdateMs) : "—",
-    ],
+    ["Server CPU ms", `${Math.round(metricsAggregate.serverCpuMs)} ms`],
+    ["Cumulative delivery latency", cumulativeLatency],
+    ["Avg latency", avgLatency],
     ["Total time", metricsAggregate.totalMs ? formatSec(metricsAggregate.totalMs) : "—"],
     [
       isStreaming ? "WS messages" : "HTTP requests",
       isStreaming ? metricsAggregate.messages : metricsAggregate.requests,
     ],
     ["Bytes received", formatBytes(metricsAggregate.bytes)],
-    ["Avg latency", avgLatency],
-    ["Total latency", totalLatency],
-    ["Server CPU ms", `${Math.round(metricsAggregate.serverCpuMs)} ms`],
   ];
 
   ui.metrics.innerHTML = metrics
@@ -523,14 +519,16 @@ function updateClientNodes(container, clients) {
 }
 
 function formatClientMetrics(client) {
-  const workerMetrics = client.statusMetrics ? JSON.stringify(client.statusMetrics) : "—";
-  const avgLatency =
-    client.metrics.latencyCount > 0
-      ? formatMs(client.metrics.latencyTotalMs / client.metrics.latencyCount)
+  if (!client.statusMetrics) {
+    return "metrics: —";
+  }
+  const eta =
+    client.statusMetrics.eta_seconds !== undefined
+      ? `${client.statusMetrics.eta_seconds.toFixed(1)}s`
       : "—";
-  const totalLatency = formatMs(client.metrics.latencyTotalMs);
-  const serverCpu = `${Math.round(client.metrics.serverCpuMs)} ms`;
-  return `metrics: ${workerMetrics} | avg latency: ${avgLatency} | total latency: ${totalLatency} | server cpu: ${serverCpu}`;
+  const digits = client.statusMetrics.digits_sent ?? 0;
+  const total = client.statusMetrics.digits_total ?? 0;
+  return `metrics: eta ${eta} | digits ${digits}/${total}`;
 }
 
 function render(state) {
