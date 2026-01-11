@@ -5,7 +5,7 @@ import time
 
 from mpmath import mp
 
-from src.naive.compute_pi.storage import ComputePiStore
+from src.naive_worker.compute_pi.storage import ComputePiStore
 
 
 def _compute_pi(digits: int) -> str:

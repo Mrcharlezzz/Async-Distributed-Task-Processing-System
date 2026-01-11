@@ -7,7 +7,7 @@ import time
 import urllib.request
 from urllib.parse import urlparse
 
-from src.naive.document_analysis.storage import DocumentAnalysisStore
+from src.naive_worker.document_analysis.storage import DocumentAnalysisStore
 
 MIN_LINES_PER_CHUNK = 50
 MAX_LINES_PER_CHUNK = 300

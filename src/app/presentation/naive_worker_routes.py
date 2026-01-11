@@ -8,8 +8,8 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field
 
-from src.naive.compute_pi.storage import ComputePiStore
-from src.naive.document_analysis.storage import DocumentAnalysisStore
+from src.naive_worker.compute_pi.storage import ComputePiStore
+from src.naive_worker.document_analysis.storage import DocumentAnalysisStore
 
 router = APIRouter(prefix="/naive", tags=["naive"])
 logger = logging.getLogger(__name__)

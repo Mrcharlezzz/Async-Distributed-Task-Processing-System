@@ -60,7 +60,7 @@ services:
       target: api
     container_name: posttager_naive_demo_worker
     command: >
-      python -m src.naive.compute_pi.worker
+      python -m src.naive_worker.compute_pi.worker
     volumes:
       - .:/app
       - naive_data:/data
@@ -72,7 +72,7 @@ services:
       target: api
     container_name: posttager_naive_demo_doc_worker
     command: >
-      python -m src.naive.document_analysis.worker
+      python -m src.naive_worker.document_analysis.worker
     volumes:
       - .:/app
       - naive_data:/data
