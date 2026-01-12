@@ -1,71 +1,259 @@
-# PostTagger-Reimagined-Test-Task
+# Async Distributed Task Processing System
 
-Test Task project for JetBrains internship application.
+**Python · FastAPI · Celery · Redis · WebSockets · PostgreSQL · Docker**
 
-## Table of Contents
-- [Overview](#overview)
-- [Structure](#structure)
-- [Prerequisites](#prerequisites)
-- [Configuration](#configuration)
-- [Running With Docker Compose](#running-with-docker-compose)
-- [Available Services & Endpoints](#available-services--endpoints)
-- [Task Workflow](#task-workflow)
+---
 
 ## Overview
-This project exposes an HTTP API that allows clients to enqueue long-running jobs (e.g., computing π or document analysis) and poll for their progress and results. Celery is used as the task queue, Redis serves as broker/backend, and FastAPI provides the HTTP layer. The service is designed with a scalable architecture, allowing new background tasks to be easily added.
 
-## Structure
-- **FastAPI (src/api/presentation)** — HTTP routing and request handling
-- **Application services (src/api/application)** — Orchestrate task creation and status queries
-- **Domain (src/api/domain)** — Shared models, repositories, and exceptions
-- **Infrastructure (src/api/infrastructure)** — Celery integration and mappers
-- **Worker (src/worker/tasks.py)** — Celery task implementations
-- **Config (src/setup)** - Configuration files
+In backend systems such as **document processing, data analysis pipelines, incremental computations, or batch jobs with user-facing feedback**, there is often a need to:
 
-## Prerequisites
-- Docker for containerized setup
+* Execute long-running tasks asynchronously
+* Expose **progress and partial results** while a task is running
+* Avoid blocking the main request–response cycle
+* Deliver updates with **low latency** to one or more clients
+* Persist task state so clients can reconnect or query historical results
 
-## Configuration
-Defaults for the API name/version, Redis URL, max digits, and worker pacing are baked into
-the settings classes (`src/setup`). You can still override any of them by creating a `.env`
-file with the relevant variables (see `src/setup/*.py` for names).
+This project provides an **event-driven** implementation of a **web–queue–worker** workflow that addresses these requirements.
 
+Tasks are dispatched asynchronously via Celery, progress and partial results are emitted as events through Redis Streams, and updates are delivered to clients using WebSockets. Authoritative task state and final results are persisted in PostgreSQL to support durability and reconnection.
 
-## Running With Docker Compose
-```bash
-docker compose up --build
+The project is designed to **demonstrate architectural tradeoffs and performance characteristics** of queue-based systems and delivery models, rather than to solve a domain-specific business problem.
+
+---
+
+## Event-Driven Application Workflow (Sequence Diagram)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Client
+    participant API as API
+    participant Redis as Redis (Broker + Streams)
+    participant Worker as Worker
+    participant DB as Database
+
+    Client ->> API: Create task (HTTP)
+    API ->> Redis: Enqueue task
+    Redis ->> Worker: Deliver task
+
+    loop Task execution
+        Worker ->> Redis: Emit progress / partial result
+        Redis ->> API: Stream event
+        API ->> DB: Persist task state
+        API ->> Client: WebSocket update
+    end
+
+    Worker ->> Redis: Emit completion event
+    Redis ->> API: Final event
+    API ->> DB: Persist final result
+    API ->> Client: Completion notification
 ```
-Services started:
-- `api` — FastAPI application on `http://localhost:8000`
-- `worker` — Celery worker
-- `redis` — Redis broker/backend
 
-## Available Services & Endpoints
-FastAPI interactive docs are available at `http://localhost:8000/docs`.
-### API
-- `POST /calculate_pi`
-  - Summary: enqueue an asynchronous task to compute digits of π.
-  - Input: JSON body `{"n": <digits>}`.
-  - Output: `Task` response with `id`, `task_type`, `payload`, `status`, and `metadata`.
-- `GET /check_progress?task_id=<id>`
-  - Summary: fetch current task status and progress.
-  - Input: query param `task_id`.
-  - Output: `TaskStatus` response with `state`, `progress`, and `message`.
-- `POST /tasks/document-analysis`
-  - Summary: enqueue a document analysis task with typed payload.
-  - Input: JSON body `{"document_ids": ["doc-1"], "run_ocr": true, "language": "eng"}`.
-  - Output: `Task` response with `id`, `task_type`, `payload`, `status`, and `metadata`.
-- `GET /task_result?task_id=<id>`
-  - Summary: retrieve the latest result payload for a task.
-  - Input: query param `task_id`.
-  - Output: `TaskResult` response with `task_id`, `task_metadata`, `data`, and `metadata`.
+---
 
-### Worker
-- Task: `compute_pi` defined in `src/worker/tasks.py`
+## Technology Stack
 
-## Task Workflow
-1. Client calls `POST /calculate_pi` or `POST /tasks/document-analysis` with the task payload.
-2. API enqueues the task via Celery and returns a `Task` with `id`.
-3. Worker updates progress using `update_state` and stores the result.
-4. Client polls `/check_progress` until `state` is `COMPLETED`, `FAILED`, or `CANCELLED`.
-5. Client fetches result data from `/task_result` using the same `task_id`.
+* **FastAPI** – HTTP API and WebSocket delivery
+* **Celery** – Background task execution and queueing
+* **Redis** – Task broker and event transport (Streams)
+* **PostgreSQL + SQLAlchemy + Alembic** – Durable storage layer
+* **SQLite** – Storage for polling-based baseline
+* **Nginx** – Static demo client hosting
+* **Pytest** – Unit and integration tests
+
+---
+
+## Update Types
+
+The system supports three types of updates emitted by workers during task execution:
+
+* **Status updates** – lightweight progress signals indicating task state changes.
+* **Partial result chunks** – intermediate result data produced while the task is still running.
+* **Final result** – the complete task output emitted upon completion.
+
+These update types are delivered uniformly through the event-driven pipeline and consumed by the API for persistence and client delivery.
+
+---
+
+## Worker Tasks
+
+The project includes two representative workloads designed to surface different update patterns and delivery characteristics.
+
+### Compute Pi
+
+A very simple, deterministic task that incrementally computes digits of π.
+A progress update is emitted for each discovered digit, simulating **heavy processing with frequent updates**, while keeping task logic minimal.
+
+
+### Document Analysis
+
+A task that scans a text document for predefined keyword patterns.
+Whenever a match is found, the task emits an update containing the matched term and a surrounding text snippet, simulating **heavier, irregular processing with non-uniform update patterns**.
+
+---
+
+## Demos
+
+The project includes demos that compare the **event-driven system** against a **baseline non-queue implementation** based on HTTP polling and SQLite storage.
+
+### Compute Pi Demo
+
+**Purpose**
+Compare event-driven streaming and HTTP polling for an incremental, deterministic workload, with **five clients running simultaneously** and requesting task progress in parallel.
+
+
+### Document Analysis Demo
+
+**Purpose**
+Compare streaming and polling under **bursty, irregular update patterns** produced by keyword-based document scanning.
+
+For detailed instructions on running the demos and interpreting the observed metrics,
+see the [Demo Guide](demo_guide.md).
+
+
+## Baseline Worker (Polling Model)
+
+The baseline worker represents a traditional, non-queue-based approach.
+
+Tasks are executed by a simple worker process that writes progress updates and partial results directly to a local SQLite database. Clients periodically poll HTTP endpoints exposed by the API to retrieve the latest task state.
+
+This model is intentionally simple but introduces inherent inefficiencies:
+
+* Repeated requests when no new data is available
+* Increased load as client count grows
+* Tight coupling between execution, storage, and delivery
+
+It serves as a reference point to highlight the tradeoffs addressed by the event-driven design.
+
+---
+
+### Baseline Workflow (Sequence Diagram)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Client
+    participant API as API
+    participant Baseline as Baseline Worker
+    participant DB as Database
+
+    Client ->> API: Create task (HTTP)
+    API ->> Baseline: Start task
+
+    loop Client polling
+        Client ->> API: GET /tasks/{id}/status
+        API ->> DB: Read task state / partials
+        API -->> Client: Status / partial results
+    end
+
+    Baseline ->> DB: Write progress / partial results
+    Baseline ->> DB: Write final result
+
+    Client ->> API: GET /tasks/{id}/result
+    API ->> DB: Read final result
+    API -->> Client: Final result
+```
+
+---
+
+## Running the Project
+
+### Prerequisites
+
+* Docker
+* Git
+
+### Run Everything
+
+```bash
+docker compose up -d --build
+```
+
+### Services
+
+* **API**: [http://localhost:8000](http://localhost:8000)
+* **API Documentation**: [http://localhost:8000/docs](http://localhost:8000/docs)
+* **Demo Hub**: [http://localhost:8080](http://localhost:8080)
+
+---
+
+## Architectural Decisions and Rationale
+
+### Why an Event-Driven Architecture
+
+An event-driven model fits long-running tasks that emit **incremental progress and partial results**, especially when updates are **irregular or bursty**. By decoupling task execution from delivery and persistence, workers can focus solely on computation while the system handles fan-out, storage, and client updates independently. This keeps execution simple and allows delivery strategies to scale and evolve without changing task logic.
+
+
+### Why Redis Streams (Instead of Pub/Sub)
+
+Redis Streams were chosen over Redis Pub/Sub to support **reliable, ordered, and replayable event delivery**.
+
+Unlike Pub/Sub, Streams:
+
+* Persist events until acknowledged
+* Allow consumers to recover after restarts
+* Prevent data loss when consumers are temporarily unavailable
+
+This is critical for **chunked progress updates and partial result streaming**, where losing intermediate updates would break correctness and invalidate measurements.
+
+
+### Why Workers Do Not Write Directly to the Database
+
+Workers intentionally do not write to the database.
+
+For tasks that emit **frequent updates**, synchronous database writes would slow down task execution and introduce unnecessary I/O overhead. By emitting events instead, workers remain fast and focused on computation.
+
+All persistence is handled centrally in the API, which:
+
+* Controls write frequency and batching
+* Applies validation and consistency rules
+* Acts as the single authority for task state
+
+
+### Throttled Database Writes in the API
+
+Progress events may be produced at a much higher rate than is suitable for durable storage.
+
+The API therefore **throttles and aggregates status updates** before writing to PostgreSQL, persisting only meaningful state transitions or periodic snapshots. This reduces database load while still guaranteeing durability and client reconnection support.
+
+
+### Redis Streams Consumer Groups and Horizontal Scaling
+
+Each API instance participates in a **Redis Streams consumer group**, ensuring that:
+
+* Each event is processed by exactly one API instance
+* Work is distributed across replicas
+* Horizontal scaling does not result in duplicate processing
+
+---
+
+## Limitations and Future Work
+
+
+### Current Limitations
+
+- **Event delivery semantics**  
+  The API currently does not enforce idempotency or strict ordering. Duplicate events may lead to inconsistent task state or repeated client updates if not handled by the client or projection layer.
+
+- **Stream replay on API restarts**  
+  A replay strategy for Redis Streams is not yet defined. In case of API restarts, pending or unacknowledged stream entries may not be replayed correctly, leading to missed in-flight updates.
+
+- **API backpressure under load**  
+  The system currently lacks a backpressure strategy. If workers emit events faster than the API can process, persist, or broadcast them, events accumulate at the API, leading to increased latency and memory pressure.
+
+---
+
+### Next Steps
+
+- **Introduce idempotent event handling**  
+  Add event identifiers and projection-level deduplication to ensure correctness under at-least-once delivery.
+
+- **Define a stream replay strategy**  
+  Explicitly handle pending entries and recovery on API restarts to guarantee no loss of in-flight updates.
+
+- **Add basic backpressure controls**  
+  Apply rate limiting, bounded buffering, or drop/merge policies for high-frequency progress events.
+
+- **Horizontal scaling experiments for the API**  
+  Evaluate multiple API instances consuming from the same Redis Streams consumer group to measure throughput, consumer lag, and WebSocket delivery behavior under load.
