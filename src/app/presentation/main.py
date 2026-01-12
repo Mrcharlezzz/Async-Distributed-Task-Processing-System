@@ -1,8 +1,8 @@
 from fastapi import FastAPI
 
-from src.app.presentation.websockets import router as ws_router
 from src.app.presentation.naive_worker_routes import router as naive_router
 from src.app.presentation.routes import router as api_router
+from src.app.presentation.websockets import router as ws_router
 from src.setup.api_config import ApiSettings
 from src.setup.app_config import configure_di
 from src.setup.stream_config import configure_stream_consumer

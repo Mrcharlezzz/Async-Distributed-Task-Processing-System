@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Iterable, Sequence
+from collections.abc import Iterable, Sequence
 
 from src.app.domain.events.task_event import TaskEvent
 from src.app.infrastructure.streams.client import StreamsClient, SyncStreamsClient

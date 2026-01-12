@@ -2,8 +2,8 @@ from celery.result import AsyncResult
 
 from src.app.domain.exceptions import TaskNotFoundError
 from src.app.domain.models.task_metadata import TaskMetadata
-from src.app.domain.models.task_result import TaskResult
 from src.app.domain.models.task_progress import TaskProgress
+from src.app.domain.models.task_result import TaskResult
 from src.app.domain.models.task_state import TaskState
 from src.app.domain.models.task_status import TaskStatus
 

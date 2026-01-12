@@ -1,7 +1,7 @@
 import os
 
-from src.setup.stream_config import configure_stream_publisher
 from src.app.infrastructure.celery.app import celery_app
+from src.setup.stream_config import configure_stream_publisher
 
 
 def main() -> None:

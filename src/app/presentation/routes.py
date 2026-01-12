@@ -1,16 +1,18 @@
 import logging
 
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from src.app.application.services import TaskService
+from src.app.domain.exceptions import TaskNotFoundError
 from src.app.domain.models import (
     ComputePiPayload,
     DocumentAnalysisPayload,
     TaskResult,
     TaskType,
 )
-from src.app.domain.exceptions import TaskNotFoundError
 from src.app.domain.models.task import Task
 from src.app.domain.models.task_status import TaskStatus
 from src.setup.api_config import ApiSettings
@@ -39,7 +41,10 @@ class CalculatePiRequest(BaseModel):
         }
     },
 )
-async def calculate_pi(body: CalculatePiRequest, svc: TaskService = Depends(get_task_service)):
+async def calculate_pi(
+    body: CalculatePiRequest,
+    svc: Annotated[TaskService, Depends(get_task_service)],
+):
     """
     Queues the `compute_pi` task.
     """
@@ -73,8 +78,8 @@ async def calculate_pi(body: CalculatePiRequest, svc: TaskService = Depends(get_
     },
 )
 async def check_progress(
+    svc: Annotated[TaskService, Depends(get_task_service)],
     task_id: str = Query(..., description="Celery task id"),
-    svc: TaskService = Depends(get_task_service),
 ):
     """
     Reads the Celery result backend for the given task id.
@@ -95,7 +100,8 @@ async def check_progress(
     summary="Create document analysis task",
 )
 async def create_doc_task(
-    body: DocumentAnalysisPayload, svc: TaskService = Depends(get_task_service)
+    body: DocumentAnalysisPayload,
+    svc: Annotated[TaskService, Depends(get_task_service)],
 ):
     """
     Enqueue a document analysis task with a typed payload.
@@ -119,8 +125,8 @@ async def create_doc_task(
     },
 )
 async def get_task_result(
+    svc: Annotated[TaskService, Depends(get_task_service)],
     task_id: str = Query(..., description="Celery task id"),
-    svc: TaskService = Depends(get_task_service),
 ):
     """
     Reads the Celery result backend for the given task id.

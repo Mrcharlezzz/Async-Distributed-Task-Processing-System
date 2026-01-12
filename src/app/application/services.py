@@ -1,5 +1,7 @@
+from datetime import UTC, datetime
+
 import inject
-from datetime import datetime, timezone
+
 from src.app.domain.models import (
     Task,
     TaskMetadata,
@@ -11,6 +13,7 @@ from src.app.domain.models import (
     TaskType,
 )
 from src.app.domain.repositories import StorageRepository, TaskManagerRepository
+
 
 class TaskService:
     """Handles submission of asynchronous tasks to the Celery broker."""
@@ -36,7 +39,7 @@ class TaskService:
             task_type=task_type,
             payload=payload,
             status=TaskStatus(state=TaskState.QUEUED, progress=TaskProgress()),
-            metadata=TaskMetadata(created_at=datetime.now(timezone.utc)),
+            metadata=TaskMetadata(created_at=datetime.now(UTC)),
         )
         task.id = await self._storage.create_task(user_id, task)
         try:
@@ -45,7 +48,7 @@ class TaskService:
             await self._storage.update_task_status(
                 task.id,
                 TaskStatus(state=TaskState.FAILED, progress=TaskProgress(), message=str(exc)),
-                metadata=TaskMetadata(updated_at=datetime.now(timezone.utc)),
+                metadata=TaskMetadata(updated_at=datetime.now(UTC)),
             )
             raise
         return task

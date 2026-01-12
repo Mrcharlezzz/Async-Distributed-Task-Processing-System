@@ -11,8 +11,8 @@ from src.app.domain.models.task_progress import TaskProgress
 from src.app.domain.models.task_result import TaskResult
 from src.app.domain.models.task_state import TaskState
 from src.app.domain.models.task_status import TaskStatus
-from src.app.domain.models.task_view import TaskView
 from src.app.domain.models.task_type import TaskType
+from src.app.domain.models.task_view import TaskView
 from src.app.infrastructure.postgres.orm import (
     TaskMetadataRow,
     TaskPayloadRow,

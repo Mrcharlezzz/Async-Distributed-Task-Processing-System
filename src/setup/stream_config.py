@@ -1,5 +1,4 @@
 import inject
-
 from pydantic import ConfigDict
 from pydantic_settings import BaseSettings
 
@@ -13,7 +12,7 @@ from src.app.infrastructure.streams.consumer import (
     StreamsConsumer,
     consumer_name,
 )
-from src.app.infrastructure.streams.publisher import StreamsPublisher, StreamsSyncPublisher
+from src.app.infrastructure.streams.publisher import StreamsSyncPublisher
 from src.app.infrastructure.streams.router import EventRouter
 
 _stream_consumer: StreamsConsumer | None = None

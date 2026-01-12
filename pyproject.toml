@@ -39,9 +39,12 @@ log-level = "info"
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+include = ["src/**"]
+
+[tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]
-lint.ignore = ["E501"]
-lint.exclude = ["build", "dist", ".venv", "venv", "env", "__pycache__"]
+ignore = ["E501"]
+exclude = ["build", "dist", ".venv", "venv", "env", "__pycache__"]
 
 [tool.mypy]
 python_version = "3.11"

@@ -1,11 +1,10 @@
 import logging
+import os
 import time
+from urllib.parse import urlparse
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Query
-import os
-from urllib.parse import urlparse
-
 from pydantic import BaseModel, Field
 
 from src.naive_worker.compute_pi.storage import ComputePiStore

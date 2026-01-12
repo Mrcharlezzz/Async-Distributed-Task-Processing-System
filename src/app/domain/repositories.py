@@ -1,16 +1,17 @@
 from __future__ import annotations
 
-from typing import Protocol, Sequence
+from collections.abc import Sequence
+from datetime import datetime
+from typing import Protocol
 
+from src.app.domain.events.task_event import TaskEvent
 from src.app.domain.models.task import Task
 from src.app.domain.models.task_metadata import TaskMetadata
+from src.app.domain.models.task_result import TaskResult
 from src.app.domain.models.task_state import TaskState
 from src.app.domain.models.task_status import TaskStatus
 from src.app.domain.models.task_type import TaskType
-from src.app.domain.models.task_result import TaskResult
 from src.app.domain.models.task_view import TaskView
-from src.app.domain.events.task_event import TaskEvent
-from datetime import datetime
 
 
 class TaskManagerRepository(Protocol):

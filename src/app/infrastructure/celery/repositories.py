@@ -4,13 +4,13 @@ import asyncio
 
 from celery.result import AsyncResult
 
-from src.app.domain.repositories import TaskManagerRepository
+from src.app.domain.models.task import Task
 from src.app.domain.models.task_result import TaskResult
+from src.app.domain.models.task_status import TaskStatus
+from src.app.domain.repositories import TaskManagerRepository
 from src.app.infrastructure.celery.app import celery_app
 from src.app.infrastructure.celery.mappers import OrmMapper
 from src.app.infrastructure.celery.task_registry import TaskRegistry
-from src.app.domain.models.task import Task
-from src.app.domain.models.task_status import TaskStatus
 
 
 class CeleryTaskManager(TaskManagerRepository):

@@ -3,10 +3,10 @@ import time
 
 from mpmath import mp
 
-from src.app.infrastructure.celery.app import celery_app
 from src.app.domain.models.task_progress import TaskProgress
 from src.app.domain.models.task_state import TaskState
 from src.app.domain.models.task_status import TaskStatus
+from src.app.infrastructure.celery.app import celery_app
 from src.app.worker.reporter import TaskReporter
 from src.setup.worker_config import get_worker_settings
 

@@ -8,6 +8,7 @@ from pydantic import ValidationError
 
 from src.app.domain.events.task_event import EventType, TaskEvent
 
+
 def _as_str(value: Any) -> str:
     """Normalize a value into a string."""
     return str(value)

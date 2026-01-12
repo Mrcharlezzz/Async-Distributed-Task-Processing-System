@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, Float, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy import JSON, DateTime, Enum, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -30,16 +30,16 @@ class TaskRow(Base):
         Enum(TaskType, name="task_type"), nullable=False
     )
 
-    payload: Mapped["TaskPayloadRow"] = relationship(
+    payload: Mapped[TaskPayloadRow] = relationship(
         back_populates="task", uselist=False, cascade="all, delete-orphan"
     )
-    task_metadata: Mapped["TaskMetadataRow"] = relationship(
+    task_metadata: Mapped[TaskMetadataRow] = relationship(
         back_populates="task", uselist=False, cascade="all, delete-orphan"
     )
-    status: Mapped["TaskStatusRow"] = relationship(
+    status: Mapped[TaskStatusRow] = relationship(
         back_populates="task", uselist=False, cascade="all, delete-orphan"
     )
-    result: Mapped["TaskResultRow"] = relationship(
+    result: Mapped[TaskResultRow] = relationship(
         back_populates="task", uselist=False, cascade="all, delete-orphan"
     )
 

@@ -1,29 +1,27 @@
 from __future__ import annotations
 
 from datetime import datetime
-
 from uuid import uuid4
+
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-
-from src.app.domain.models.task import Task
-from src.app.domain.models.task_result import TaskResult
-from src.app.domain.models.task_status import TaskStatus
-from src.app.domain.models.task_state import TaskState
-from src.app.domain.models.task_metadata import TaskMetadata
-from src.app.domain.models.task_type import TaskType
 from src.app.domain.exceptions import TaskAccessDeniedError, TaskNotFoundError
-from src.app.domain.repositories import StorageRepository
+from src.app.domain.models.task import Task
+from src.app.domain.models.task_metadata import TaskMetadata
+from src.app.domain.models.task_result import TaskResult
+from src.app.domain.models.task_state import TaskState
+from src.app.domain.models.task_status import TaskStatus
+from src.app.domain.models.task_type import TaskType
 from src.app.domain.models.task_view import TaskView
+from src.app.domain.repositories import StorageRepository
+from src.app.infrastructure.postgres.mappers import OrmMapper
 from src.app.infrastructure.postgres.orm import (
     PostgresOrm,
     TaskMetadataRow,
-    TaskResultRow,
     TaskRow,
     TaskStatusRow,
 )
-from src.app.infrastructure.postgres.mappers import OrmMapper
 
 
 class PostgresStorageRepository(StorageRepository):

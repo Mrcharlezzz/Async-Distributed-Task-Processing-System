@@ -1,10 +1,10 @@
+import bisect
 import itertools
+import logging
 import os
 import random
-import time
-import bisect
 import re
-import logging
+import time
 import urllib.request
 from urllib.parse import urlparse
 

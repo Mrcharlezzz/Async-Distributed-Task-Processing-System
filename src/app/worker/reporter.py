@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 import inject
 
@@ -28,7 +29,7 @@ class TaskReporter:
         event = TaskEvent.result(self._task_id, result_snapshot)
         self._publish(event)
 
-    def report_result_chunk(self, batch_size: int = 1) -> "ResultChunkReporter":
+    def report_result_chunk(self, batch_size: int = 1) -> ResultChunkReporter:
         return ResultChunkReporter(self, batch_size)
 
     def _publish(self, event: TaskEvent) -> None:
@@ -67,7 +68,7 @@ class ResultChunkReporter:
         self._chunk_index += 1
         self._batch.clear()
 
-    def __enter__(self) -> "ResultChunkReporter":
+    def __enter__(self) -> ResultChunkReporter:
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:
