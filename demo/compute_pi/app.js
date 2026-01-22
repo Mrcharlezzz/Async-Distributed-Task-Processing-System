@@ -3,7 +3,6 @@ const UI = {
   runStatus: document.getElementById("run-status"),
   digitsInput: document.getElementById("digits"),
   pollInput: document.getElementById("poll-interval"),
-  logOutput: document.getElementById("log-output"),
   streaming: {
     clients: document.querySelector('.clients[data-panel="streaming"]'),
     metrics: document.querySelector('.metrics[data-panel="streaming"]'),
@@ -26,36 +25,9 @@ const formatBytes = (bytes) => {
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 };
 
-function log(level, message, data) {
-  const ts = new Date().toISOString().split("T")[1].split(".")[0];
-  let line = `[${ts}] ${level.toUpperCase()}: ${message}`;
-  if (data !== undefined) {
-    line += ` ${JSON.stringify(data)}`;
-  }
-  if (level === "error") {
-    console.error(line);
-  } else {
-    console.log(line);
-  }
-  if (UI.logOutput) {
-    UI.logOutput.textContent += `${line}\n`;
-    UI.logOutput.scrollTop = UI.logOutput.scrollHeight;
-  }
-}
-
-log("info", "Demo client loaded", { clientCount: CLIENT_COUNT });
-
 if (!UI.runButton || !UI.streaming.clients || !UI.polling.clients) {
-  log("error", "Missing UI elements; check HTML/JS version mismatch.");
+  throw new Error("Missing UI elements; check HTML/JS version mismatch.");
 }
-
-window.addEventListener("error", (event) => {
-  log("error", "Unhandled error", { message: event.message });
-});
-
-window.addEventListener("unhandledrejection", (event) => {
-  log("error", "Unhandled promise rejection", { reason: String(event.reason) });
-});
 
 class ApiClient {
   async startPi(digits) {
@@ -112,7 +84,6 @@ class ApiClient {
       return { ok: res.ok, status: res.status, data, bytes, elapsedMs };
     } catch (error) {
       const elapsedMs = performance.now() - start;
-      log("error", "HTTP request failed", { url, error: String(error) });
       return { ok: false, status: 0, data: null, bytes: 0, elapsedMs, error: String(error) };
     }
   }
@@ -130,12 +101,9 @@ class WsClient {
         ws.send("ping");
       }
     }, 1000);
-    ws.addEventListener("open", () => log("info", "WS connected", { clientId }));
     ws.addEventListener("message", (event) => onMessage(event.data));
-    ws.addEventListener("error", () => log("error", "WS error", { clientId }));
     ws.addEventListener("close", () => {
       clearInterval(keepalive);
-      log("info", "WS closed", { clientId });
     });
     return {
       close: () => ws.close(),
@@ -174,7 +142,6 @@ class StreamingEngine {
     try {
       message = JSON.parse(raw);
     } catch {
-      log("error", "WS message parse failed", { clientId: this.state.id });
       return;
     }
     if (message.type === "task.status") {
@@ -266,8 +233,6 @@ class PollingEngine {
         this.state.metrics.totalMs = performance.now() - this.startTime;
         this.stop();
         return;
-      } else if (progressRes.error) {
-        log("error", "Polling progress failed", { clientId: this.state.id });
       }
 
       const resultRes = await this.apiClient.getNaiveResult(this.taskId);
@@ -293,8 +258,6 @@ class PollingEngine {
         this.state.completed = true;
         this.state.metrics.totalMs = performance.now() - this.startTime;
         this.stop();
-      } else if (resultRes.error) {
-        log("error", "Polling result failed", { clientId: this.state.id });
       }
     } finally {
       this.inFlight = false;
@@ -333,7 +296,6 @@ class RunController {
     if (UI.logOutput) {
       UI.logOutput.textContent = "";
     }
-    log("info", "Demo started", { digits, pollInterval });
     try {
       const taskId = await this.apiClient.startPi(digits);
       await this.apiClient.startNaivePi(digits, taskId);
@@ -347,11 +309,9 @@ class RunController {
       );
       this.streamingEngines.forEach((engine) => engine.start());
       this.pollingEngines.forEach((engine) => engine.start());
-      log("info", "Task started", { taskId });
     } catch (err) {
       state.runStatus = "error";
       state.error = err.message || String(err);
-      log("error", "Run failed", { error: state.error });
     }
   }
 
@@ -445,7 +405,6 @@ function aggregateMetrics(clients) {
 
 function renderPanel(ui, mode, isStreaming) {
   if (!ui.clients) {
-    log("error", "Missing client container", { panel: isStreaming ? "streaming" : "polling" });
     return;
   }
   ensureClientNodes(ui.clients, mode.clients.length);
@@ -573,7 +532,6 @@ setInterval(() => {
   const pollingDone = state.polling.clients.every((client) => client.completed);
   if (streamingDone && pollingDone && state.runStatus === "running") {
     state.runStatus = "done";
-    log("info", "Demo completed");
   }
 }, 100);
 

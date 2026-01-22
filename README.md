@@ -116,6 +116,7 @@ The system demonstrates lower server CPU usage and more stable end-to-end latenc
 
 When compared against a baseline implementation using HTTP polling for updates, the system achieves similar perceived latency with approximately 5× lower server CPU usage, and delivers update messages to multiple concurrent clients up to 8× faster.
 
+
 ## Baseline Worker (Polling Model)
 
 The baseline worker represents a traditional, non-queue-based approach.
