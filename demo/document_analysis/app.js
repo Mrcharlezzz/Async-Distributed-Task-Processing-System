@@ -24,7 +24,6 @@ const UI = {
   docUrlInput: document.getElementById("doc-url"),
   keywordsInput: document.getElementById("keywords"),
   pollInput: document.getElementById("poll-interval"),
-  logOutput: document.getElementById("log-output"),
   streaming: {
     metrics: document.getElementById("streaming-metrics"),
     progress: document.getElementById("streaming-progress"),
@@ -38,31 +37,6 @@ const UI = {
     summary: document.getElementById("polling-summary"),
   },
 };
-
-function log(level, message, data) {
-  const ts = new Date().toISOString().split("T")[1].split(".")[0];
-  let line = `[${ts}] ${level.toUpperCase()}: ${message}`;
-  if (data !== undefined) {
-    line += ` ${JSON.stringify(data)}`;
-  }
-  if (level === "error") {
-    console.error(line);
-  } else {
-    console.log(line);
-  }
-  if (UI.logOutput) {
-    UI.logOutput.textContent += `${line}\n`;
-    UI.logOutput.scrollTop = UI.logOutput.scrollHeight;
-  }
-}
-
-window.addEventListener("error", (event) => {
-  log("error", "Unhandled error", { message: event.message });
-});
-
-window.addEventListener("unhandledrejection", (event) => {
-  log("error", "Unhandled promise rejection", { reason: String(event.reason) });
-});
 
 function maybeFirstUpdate(state, startTime, progress, metrics) {
   if (!state.metrics.firstUpdateMs && (progress > 0 || metrics)) {
@@ -199,8 +173,7 @@ const api = new ApiClient({
     }),
   getStatus: (taskId) =>
     getJson(
-      `${API_BASE}/naive/document-analysis/status?task_id=${encodeURIComponent(taskId)}`,
-      { onError: (info) => log("error", "HTTP request failed", info) }
+      `${API_BASE}/naive/document-analysis/status?task_id=${encodeURIComponent(taskId)}`
     ),
   getResult: (taskId, state) => {
     const url = new URL(`${API_BASE}/naive/document-analysis/snippets`, window.location.href);
@@ -208,7 +181,7 @@ const api = new ApiClient({
     if (state?.lastSnippetId !== null && state?.lastSnippetId !== undefined) {
       url.searchParams.set("after", String(state.lastSnippetId));
     }
-    return getJson(url.toString(), { onError: (info) => log("error", "HTTP request failed", info) });
+    return getJson(url.toString());
   },
 });
 const wsClient = new WsClient(WS_BASE);
@@ -287,7 +260,6 @@ async function runDemo(event) {
   UI.runButton.disabled = true;
   runInProgress = true;
   UI.runStatus.textContent = "Starting…";
-  UI.logOutput.textContent = "";
 
   if (streamingEngine) streamingEngine.stop();
   if (pollingEngine) pollingEngine.stop();
@@ -303,14 +275,12 @@ async function runDemo(event) {
   const pollInterval = Number(UI.pollInput?.value || 200);
 
   if (!documentPath && !documentUrl) {
-    log("error", "Document path or URL is required");
     UI.runStatus.textContent = "Missing document path/URL";
     UI.runButton.disabled = false;
     runInProgress = false;
     return;
   }
   if (!keywords.length) {
-    log("error", "Keywords are required");
     UI.runStatus.textContent = "Missing keywords";
     UI.runButton.disabled = false;
     runInProgress = false;
@@ -323,7 +293,6 @@ async function runDemo(event) {
       throw new Error(`Failed to start document analysis (${taskRes.status})`);
     }
     const taskId = taskRes.data?.id;
-    log("info", "Streaming task created", { taskId });
     const naiveRes = await api.startNaiveTask(
       taskId,
       documentPath || null,
@@ -334,8 +303,6 @@ async function runDemo(event) {
     if (!naiveRes.ok) {
       throw new Error(`Failed to start naive document analysis (${naiveRes.status})`);
     }
-    log("info", "Naive task created", { taskId });
-
     streamingEngine = new StreamingEngine({
       taskId,
       wsClient,
@@ -354,9 +321,6 @@ async function runDemo(event) {
         }
       },
       onUpdate: updateUI,
-      onOpen: () => log("info", "WS connected", { taskId }),
-      onError: () => log("error", "WS error", { taskId }),
-      onClose: () => log("info", "WS closed", { taskId }),
     });
     pollingEngine = new PollingEngine({
       taskId,
@@ -402,7 +366,6 @@ async function runDemo(event) {
     pollingEngine.start();
     UI.runStatus.textContent = `Running (${taskId})`;
   } catch (error) {
-    log("error", "Run failed", { error: String(error) });
     UI.runStatus.textContent = "Failed to start";
     UI.runButton.disabled = false;
     runInProgress = false;
@@ -411,4 +374,3 @@ async function runDemo(event) {
 
 UI.controlsForm?.addEventListener("submit", runDemo);
 UI.runButton?.addEventListener("click", runDemo);
-log("info", "Document analysis demo ready");

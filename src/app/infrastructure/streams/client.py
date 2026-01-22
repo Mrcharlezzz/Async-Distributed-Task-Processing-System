@@ -17,7 +17,7 @@ class StreamsClient:
         url: str,
         *,
         max_connections: int = 10,
-        socket_timeout: float = 5.0,
+        socket_timeout: float = 10.0,
         socket_connect_timeout: float = 5.0,
         retry_on_timeout: bool = True,
     ) -> None:
@@ -74,7 +74,7 @@ class SyncStreamsClient:
         url: str,
         *,
         max_connections: int = 10,
-        socket_timeout: float = 5.0,
+        socket_timeout: float = 10.0,
         socket_connect_timeout: float = 5.0,
         retry_on_timeout: bool = True,
     ) -> None:
