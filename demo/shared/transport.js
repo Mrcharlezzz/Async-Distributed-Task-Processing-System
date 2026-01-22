@@ -88,3 +88,28 @@ export class WsClient {
     };
   }
 }
+
+export class ApiClient {
+  constructor({ startTask, startNaiveTask, getStatus, getResult }) {
+    this._startTask = startTask;
+    this._startNaiveTask = startNaiveTask;
+    this._getStatus = getStatus;
+    this._getResult = getResult;
+  }
+
+  startTask(...args) {
+    return this._startTask(...args);
+  }
+
+  startNaiveTask(...args) {
+    return this._startNaiveTask(...args);
+  }
+
+  getStatus(...args) {
+    return this._getStatus(...args);
+  }
+
+  getResult(...args) {
+    return this._getResult(...args);
+  }
+}

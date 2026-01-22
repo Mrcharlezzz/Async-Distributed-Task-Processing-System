@@ -1,5 +1,20 @@
-import { API_BASE, WS_BASE, getJson, postJson, WsClient } from "../shared/transport.js";
-import { formatMs, formatSec, formatBytes, recordLatency } from "../shared/engine.js";
+import {
+  API_BASE,
+  WS_BASE,
+  getJson,
+  postJson,
+  WsClient,
+  ApiClient,
+} from "../shared/transport.js";
+import {
+  formatMs,
+  formatSec,
+  formatBytes,
+  StreamingEngine,
+  PollingEngine,
+  applyNaiveStatus,
+  TERMINAL_STATES,
+} from "../shared/engine.js";
 
 const UI = {
   runButton: document.getElementById("run"),
@@ -49,48 +64,38 @@ window.addEventListener("unhandledrejection", (event) => {
   log("error", "Unhandled promise rejection", { reason: String(event.reason) });
 });
 
-class ApiClient {
-  async startDocumentAnalysis(documentPath, documentUrl, keywords) {
-    const res = await postJson(`${API_BASE}/tasks/document-analysis`, {
-      document_path: documentPath,
-      document_url: documentUrl,
-      keywords,
-    });
-    if (!res.ok) {
-      throw new Error(`Failed to start document analysis (${res.status})`);
-    }
-    return res.data?.id;
+function maybeFirstUpdate(state, startTime, progress, metrics) {
+  if (!state.metrics.firstUpdateMs && (progress > 0 || metrics)) {
+    state.metrics.firstUpdateMs = performance.now() - startTime;
   }
+}
 
-  async startNaiveDocumentAnalysis(taskId, documentPath, documentUrl, keywords, demo = false) {
-    const res = await postJson(`${API_BASE}/naive/document-analysis`, {
-      task_id: taskId,
-      document_path: documentPath,
-      document_url: documentUrl,
-      keywords,
-      demo,
-    });
-    if (!res.ok) {
-      throw new Error(`Failed to start naive document analysis (${res.status})`);
-    }
-    return res.data?.task_id;
+function formatStreamingSnippet(item, state) {
+  if (!item) return "";
+  const line = item.location?.line ?? "?";
+  const keyword = item.keyword ?? "keyword";
+  const snippet = item.snippet ?? "";
+  const entry = `[line ${line}] ${keyword}: ${snippet}`;
+  if (state.result) {
+    state.result += `\n${entry}`;
+  } else {
+    state.result = entry;
   }
+  return entry;
+}
 
-  async getNaiveStatus(taskId) {
-    return getJson(
-      `${API_BASE}/naive/document-analysis/status?task_id=${encodeURIComponent(taskId)}`,
-      { onError: (info) => log("error", "HTTP request failed", info) }
-    );
+function formatPollingSnippet(item, state) {
+  if (!item) return "";
+  const line = item.line ?? "?";
+  const keyword = item.keyword ?? "keyword";
+  const snippet = item.snippet ?? "";
+  const entry = `[line ${line}] ${keyword}: ${snippet}`;
+  if (state.result) {
+    state.result += `\n${entry}`;
+  } else {
+    state.result = entry;
   }
-
-  async getNaiveSnippets(taskId, afterId) {
-    const url = new URL(`${API_BASE}/naive/document-analysis/snippets`, window.location.href);
-    url.searchParams.set("task_id", taskId);
-    if (afterId !== null && afterId !== undefined) {
-      url.searchParams.set("after", String(afterId));
-    }
-    return getJson(url.toString(), { onError: (info) => log("error", "HTTP request failed", info) });
-  }
+  return entry;
 }
 
 function createPanelState() {
@@ -112,216 +117,6 @@ function createPanelState() {
       serverCpuMs: 0,
     },
   };
-}
-
-class StreamingEngine {
-  constructor(taskId, wsClient, panelState, onUpdate) {
-    this.taskId = taskId;
-    this.wsClient = wsClient;
-    this.state = panelState;
-    this.onUpdate = onUpdate;
-    this.socket = null;
-    this.startTime = performance.now();
-  }
-
-  start() {
-    this.socket = this.wsClient.connect({
-      taskId: this.taskId,
-      onMessage: (data) => this._handleMessage(data),
-      onOpen: () => log("info", "WS connected", { taskId: this.taskId }),
-      onError: () => log("error", "WS error", { taskId: this.taskId }),
-      onClose: () => log("info", "WS closed", { taskId: this.taskId }),
-    });
-  }
-
-  stop() {
-    this.socket?.close();
-  }
-
-  _handleMessage(raw) {
-    this.state.metrics.messages += 1;
-    this.state.metrics.bytes += raw.length;
-    if (!this.state.metrics.firstUpdateMs) {
-      this.state.metrics.firstUpdateMs = performance.now() - this.startTime;
-    }
-    let message;
-    try {
-      message = JSON.parse(raw);
-    } catch {
-      log("error", "WS message parse failed", { taskId: this.taskId });
-      return;
-    }
-    if (message.type === "task.status") {
-      const status = message.payload?.status;
-      const progress = status?.progress?.percentage ?? 0;
-      this.state.progress = progress;
-      this.state.status = status?.state ?? "RUNNING";
-      this.state.statusMetrics = status?.metrics ?? null;
-      const meta = status?.metadata;
-      if (meta?.server_sent_ts) {
-        const latencyMs = Date.now() - meta.server_sent_ts * 1000;
-        this.state.metrics.latencyTotalMs += latencyMs;
-        this.state.metrics.latencyCount += 1;
-      }
-      if (meta?.server_cpu_ms_ws !== undefined) {
-        this.state.metrics.serverCpuMs = meta.server_cpu_ms_ws;
-      }
-    }
-    if (message.type === "task.result_chunk") {
-      const payload = message.payload;
-      const data = Array.isArray(payload?.data) ? payload.data : [];
-      if (data.length) {
-        const lines = [];
-        for (const item of data) {
-          const line = this._formatSnippet(item);
-          if (line) lines.push(line);
-        }
-        if (lines.length) {
-          appendResultText(UI.streaming.result, lines.join("\n"));
-        }
-      }
-      if (payload?.is_last) {
-        this.state.completed = true;
-        this.state.metrics.totalMs = performance.now() - this.startTime;
-      }
-    }
-    if (message.type === "task.result") {
-      this.state.completed = true;
-      this.state.metrics.totalMs = performance.now() - this.startTime;
-    }
-    this.onUpdate();
-  }
-
-  _formatSnippet(item) {
-    if (!item) return "";
-    const line = item.location?.line ?? "?";
-    const keyword = item.keyword ?? "keyword";
-    const snippet = item.snippet ?? "";
-    const entry = `[line ${line}] ${keyword}: ${snippet}`;
-    if (this.state.result) {
-      this.state.result += `\n${entry}`;
-    } else {
-      this.state.result = entry;
-    }
-    return entry;
-  }
-}
-
-class PollingEngine {
-  constructor(taskId, apiClient, panelState, intervalMs, onUpdate) {
-    this.taskId = taskId;
-    this.apiClient = apiClient;
-    this.state = panelState;
-    this.intervalMs = intervalMs;
-    this.onUpdate = onUpdate;
-    this.timer = null;
-    this.inFlight = false;
-    this.startTime = performance.now();
-  }
-
-  start() {
-    this.timer = setInterval(() => this._tick(), this.intervalMs);
-    this._tick();
-  }
-
-  stop() {
-    clearInterval(this.timer);
-  }
-
-  async _tick() {
-    if (this.inFlight || this.state.completed) return;
-    this.inFlight = true;
-    try {
-      const statusRes = await this.apiClient.getNaiveStatus(this.taskId);
-      this._record(statusRes.bytes);
-      recordLatency(this.state.metrics, statusRes.elapsedMs);
-      if (statusRes.status === 404) {
-        this.state.completed = true;
-        this.state.metrics.totalMs = performance.now() - this.startTime;
-        this.stop();
-        this.onUpdate();
-        return;
-      }
-      if (statusRes.ok && statusRes.data) {
-        const progress = statusRes.data.progress?.percentage ?? 0;
-        this.state.progress = progress;
-        this.state.status = statusRes.data.state ?? "RUNNING";
-        this.state.statusMetrics = statusRes.data.metrics ?? null;
-        const meta = statusRes.data.metadata;
-        if (meta?.server_cpu_ms_naive !== undefined) {
-          this.state.metrics.serverCpuMs = meta.server_cpu_ms_naive;
-        }
-        this._maybeFirstUpdate(progress, statusRes.data.metrics);
-      }
-
-      const snippetRes = await this.apiClient.getNaiveSnippets(
-        this.taskId,
-        this.state.lastSnippetId
-      );
-      this._record(snippetRes.bytes);
-      recordLatency(this.state.metrics, snippetRes.elapsedMs);
-      if (snippetRes.status === 404) {
-        this.state.completed = true;
-        this.state.metrics.totalMs = performance.now() - this.startTime;
-        this.stop();
-        this.onUpdate();
-        return;
-      }
-      if (snippetRes.ok && snippetRes.data) {
-        const snippets = snippetRes.data.snippets ?? [];
-        if (snippets.length) {
-          const lines = [];
-          for (const item of snippets) {
-            const line = this._formatSnippet(item);
-            if (line) lines.push(line);
-          }
-          if (lines.length) {
-            appendResultText(UI.polling.result, lines.join("\n"));
-          }
-          this.state.lastSnippetId = snippetRes.data.last_id ?? this.state.lastSnippetId;
-          this._maybeFirstUpdate(1, {});
-        }
-        const meta = snippetRes.data.metadata;
-        if (meta?.server_cpu_ms_naive !== undefined) {
-          this.state.metrics.serverCpuMs = meta.server_cpu_ms_naive;
-        }
-      }
-
-      if (this.state.status === "COMPLETED") {
-        this.state.completed = true;
-        this.state.metrics.totalMs = performance.now() - this.startTime;
-        this.stop();
-      }
-      this.onUpdate();
-    } finally {
-      this.inFlight = false;
-    }
-  }
-
-  _record(bytes) {
-    this.state.metrics.requests += 1;
-    this.state.metrics.bytes += bytes;
-  }
-
-  _formatSnippet(item) {
-    if (!item) return "";
-    const line = item.line ?? "?";
-    const keyword = item.keyword ?? "keyword";
-    const snippet = item.snippet ?? "";
-    const entry = `[line ${line}] ${keyword}: ${snippet}`;
-    if (this.state.result) {
-      this.state.result += `\n${entry}`;
-    } else {
-      this.state.result = entry;
-    }
-    return entry;
-  }
-
-  _maybeFirstUpdate(progress, metrics) {
-    if (!this.state.metrics.firstUpdateMs && (progress > 0 || metrics)) {
-      this.state.metrics.firstUpdateMs = performance.now() - this.startTime;
-    }
-  }
 }
 
 function renderMetricsText(metrics, perf) {
@@ -387,7 +182,35 @@ function resetPanel(panel, state) {
   panel.summary.innerHTML = "";
 }
 
-const api = new ApiClient();
+const api = new ApiClient({
+  startTask: (documentPath, documentUrl, keywords) =>
+    postJson(`${API_BASE}/tasks/document-analysis`, {
+      document_path: documentPath,
+      document_url: documentUrl,
+      keywords,
+    }),
+  startNaiveTask: (taskId, documentPath, documentUrl, keywords, demo = false) =>
+    postJson(`${API_BASE}/naive/document-analysis`, {
+      task_id: taskId,
+      document_path: documentPath,
+      document_url: documentUrl,
+      keywords,
+      demo,
+    }),
+  getStatus: (taskId) =>
+    getJson(
+      `${API_BASE}/naive/document-analysis/status?task_id=${encodeURIComponent(taskId)}`,
+      { onError: (info) => log("error", "HTTP request failed", info) }
+    ),
+  getResult: (taskId, state) => {
+    const url = new URL(`${API_BASE}/naive/document-analysis/snippets`, window.location.href);
+    url.searchParams.set("task_id", taskId);
+    if (state?.lastSnippetId !== null && state?.lastSnippetId !== undefined) {
+      url.searchParams.set("after", String(state.lastSnippetId));
+    }
+    return getJson(url.toString(), { onError: (info) => log("error", "HTTP request failed", info) });
+  },
+});
 const wsClient = new WsClient(WS_BASE);
 
 let streamingEngine = null;
@@ -495,19 +318,86 @@ async function runDemo(event) {
   }
 
   try {
-    const taskId = await api.startDocumentAnalysis(documentPath || null, documentUrl || null, keywords);
+    const taskRes = await api.startTask(documentPath || null, documentUrl || null, keywords);
+    if (!taskRes.ok) {
+      throw new Error(`Failed to start document analysis (${taskRes.status})`);
+    }
+    const taskId = taskRes.data?.id;
     log("info", "Streaming task created", { taskId });
-    await api.startNaiveDocumentAnalysis(
+    const naiveRes = await api.startNaiveTask(
       taskId,
       documentPath || null,
       documentUrl || null,
       keywords,
       true
     );
+    if (!naiveRes.ok) {
+      throw new Error(`Failed to start naive document analysis (${naiveRes.status})`);
+    }
     log("info", "Naive task created", { taskId });
 
-    streamingEngine = new StreamingEngine(taskId, wsClient, streamingState, updateUI);
-    pollingEngine = new PollingEngine(taskId, api, pollingState, pollInterval, updateUI);
+    streamingEngine = new StreamingEngine({
+      taskId,
+      wsClient,
+      state: streamingState,
+      onResultChunk: (payload, state) => {
+        const data = Array.isArray(payload?.data) ? payload.data : [];
+        if (data.length) {
+          const lines = [];
+          for (const item of data) {
+            const line = formatStreamingSnippet(item, state);
+            if (line) lines.push(line);
+          }
+          if (lines.length) {
+            appendResultText(UI.streaming.result, lines.join("\n"));
+          }
+        }
+      },
+      onUpdate: updateUI,
+      onOpen: () => log("info", "WS connected", { taskId }),
+      onError: () => log("error", "WS error", { taskId }),
+      onClose: () => log("info", "WS closed", { taskId }),
+    });
+    pollingEngine = new PollingEngine({
+      taskId,
+      api,
+      state: pollingState,
+      intervalMs: pollInterval,
+      onStatus: (data, state) => {
+        applyNaiveStatus(state, data);
+        maybeFirstUpdate(state, pollingEngine.startTime, state.progress, data.metrics);
+      },
+      onResult: (data, state) => {
+        const snippets = data.snippets ?? [];
+        if (snippets.length) {
+          const lines = [];
+          for (const item of snippets) {
+            const line = formatPollingSnippet(item, state);
+            if (line) lines.push(line);
+          }
+          if (lines.length) {
+            appendResultText(UI.polling.result, lines.join("\n"));
+          }
+          state.lastSnippetId = data.last_id ?? state.lastSnippetId;
+          maybeFirstUpdate(state, pollingEngine.startTime, 1, {});
+        }
+        const meta = data.metadata;
+        if (meta?.server_cpu_ms_naive !== undefined) {
+          state.metrics.serverCpuMs = meta.server_cpu_ms_naive;
+        }
+      },
+      shouldStop: ({ phase, statusRes, resultRes, state }) => {
+        if (phase === "status") {
+          if (statusRes?.status === 404) return true;
+        }
+        if (phase === "result") {
+          if (resultRes?.status === 404) return true;
+          if (TERMINAL_STATES.has(state.status)) return true;
+        }
+        return false;
+      },
+      onUpdate: updateUI,
+    });
     streamingEngine.start();
     pollingEngine.start();
     UI.runStatus.textContent = `Running (${taskId})`;

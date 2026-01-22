@@ -1,5 +1,13 @@
-import { API_BASE, WS_BASE, getJson, postJson, WsClient } from "../shared/transport.js";
-import { formatMs, formatSec, formatBytes, recordLatency } from "../shared/engine.js";
+import { API_BASE, WS_BASE, getJson, postJson, WsClient, ApiClient } from "../shared/transport.js";
+import {
+  formatMs,
+  formatSec,
+  formatBytes,
+  StreamingEngine,
+  PollingEngine,
+  applyNaiveStatus,
+  TERMINAL_STATES,
+} from "../shared/engine.js";
 
 const UI = {
   runButton: document.getElementById("run"),
@@ -22,198 +30,14 @@ if (!UI.runButton || !UI.streaming.clients || !UI.polling.clients) {
   throw new Error("Missing UI elements; check HTML/JS version mismatch.");
 }
 
-class ApiClient {
-  async startPi(digits) {
-    const res = await postJson(`${API_BASE}/calculate_pi`, { n: digits });
-    if (!res.ok) {
-      throw new Error(`Failed to start task (${res.status})`);
-    }
-    return res.data?.id;
+function maybeFirstUpdate(state, progressPayload, startTime) {
+  if (state.metrics.firstUpdateMs) {
+    return;
   }
-
-  async startNaivePi(digits, taskId) {
-    const res = await postJson(`${API_BASE}/naive/calculate_pi`, {
-      digits,
-      task_id: taskId,
-      demo: true,
-    });
-    if (!res.ok) {
-      throw new Error(`Failed to start naive task (${res.status})`);
-    }
-    return res.data?.task_id;
-  }
-
-  async getNaiveProgress(taskId) {
-    return getJson(
-      `${API_BASE}/naive/check_progress?task_id=${encodeURIComponent(taskId)}`
-    );
-  }
-
-  async getNaiveResult(taskId) {
-    return getJson(`${API_BASE}/naive/task_result?task_id=${encodeURIComponent(taskId)}`);
-  }
-}
-
-class StreamingEngine {
-  constructor(taskId, wsClient, clientState) {
-    this.taskId = taskId;
-    this.wsClient = wsClient;
-    this.state = clientState;
-    this.socket = null;
-    this.startTime = performance.now();
-  }
-
-  start() {
-    this.socket = this.wsClient.connect({
-      taskId: this.taskId,
-      onMessage: (data) => this._handleMessage(data),
-    });
-  }
-
-  stop() {
-    this.socket?.close();
-  }
-
-  _handleMessage(raw) {
-    this.state.metrics.messages += 1;
-    this.state.metrics.bytes += raw.length;
-    if (!this.state.metrics.firstUpdateMs) {
-      this.state.metrics.firstUpdateMs = performance.now() - this.startTime;
-    }
-    let message;
-    try {
-      message = JSON.parse(raw);
-    } catch {
-      return;
-    }
-    if (message.type === "task.status") {
-      const status = message.payload?.status;
-      const progress = status?.progress?.percentage ?? 0;
-      this.state.progress = progress;
-      this.state.status = status?.state ?? "RUNNING";
-      this.state.statusMetrics = status?.metrics ?? null;
-      const meta = status?.metadata;
-      if (meta?.server_sent_ts) {
-        const latencyMs = Date.now() - meta.server_sent_ts * 1000;
-        this.state.metrics.latencyTotalMs += latencyMs;
-        this.state.metrics.latencyCount += 1;
-      }
-      if (meta?.server_cpu_ms_ws !== undefined) {
-        this.state.metrics.serverCpuMs = meta.server_cpu_ms_ws;
-      }
-    }
-    if (message.type === "task.result_chunk") {
-      const payload = message.payload;
-      const payloadData = payload?.data;
-      if (Array.isArray(payloadData)) {
-        if (payloadData.length) {
-          this.state.result += payloadData.join("");
-        }
-      } else if (typeof payloadData === "string" && payloadData) {
-        this.state.result += payloadData;
-      }
-      if (payload?.is_last) {
-        this.state.completed = true;
-        this.state.metrics.totalMs = performance.now() - this.startTime;
-      }
-    }
-    if (message.type === "task.result") {
-      this.state.completed = true;
-      this.state.metrics.totalMs = performance.now() - this.startTime;
-    }
-  }
-}
-
-class PollingEngine {
-  constructor(taskId, apiClient, clientState, intervalMs) {
-    this.taskId = taskId;
-    this.apiClient = apiClient;
-    this.state = clientState;
-    this.intervalMs = intervalMs;
-    this.timer = null;
-    this.inFlight = false;
-    this.startTime = performance.now();
-  }
-
-  start() {
-    this.timer = setInterval(() => this._tick(), this.intervalMs);
-    this._tick();
-  }
-
-  stop() {
-    clearInterval(this.timer);
-  }
-
-  async _tick() {
-    if (this.inFlight || this.state.completed) return;
-    this.inFlight = true;
-    try {
-      const progressRes = await this.apiClient.getNaiveProgress(this.taskId);
-      this._record(progressRes.bytes);
-      recordLatency(this.state.metrics, progressRes.elapsedMs);
-      if (progressRes.ok && progressRes.data) {
-        const progress = progressRes.data.progress?.percentage ?? 0;
-        this.state.progress = progress;
-        this.state.status = progressRes.data.state ?? "RUNNING";
-        this.state.statusMetrics = progressRes.data.metrics ?? null;
-        const meta = progressRes.data.metadata;
-        if (meta?.server_cpu_ms_naive !== undefined) {
-          this.state.metrics.serverCpuMs = meta.server_cpu_ms_naive;
-        }
-        this._maybeFirstUpdate(progressRes.data);
-        if (["COMPLETED", "FAILED", "CANCELLED"].includes(this.state.status)) {
-          this.state.completed = true;
-          this.state.metrics.totalMs = performance.now() - this.startTime;
-          this.stop();
-          return;
-        }
-      } else if (progressRes.status === 404) {
-        this.state.completed = true;
-        this.state.metrics.totalMs = performance.now() - this.startTime;
-        this.stop();
-        return;
-      }
-
-      const resultRes = await this.apiClient.getNaiveResult(this.taskId);
-      this._record(resultRes.bytes);
-      recordLatency(this.state.metrics, resultRes.elapsedMs);
-      if (resultRes.ok && resultRes.data) {
-        const payload = resultRes.data.partial_result ?? "";
-        this.state.result = typeof payload === "string" ? payload : JSON.stringify(payload);
-        this._maybeFirstUpdate(progressRes.data);
-        const meta = resultRes.data.metadata;
-        if (meta?.server_cpu_ms_naive !== undefined) {
-          this.state.metrics.serverCpuMs = meta.server_cpu_ms_naive;
-        }
-        if (resultRes.data.done === true) {
-          this.state.completed = true;
-          this.state.metrics.totalMs = performance.now() - this.startTime;
-          this.stop();
-        }
-      } else if (resultRes.status === 404) {
-        this.state.completed = true;
-        this.state.metrics.totalMs = performance.now() - this.startTime;
-        this.stop();
-      }
-    } finally {
-      this.inFlight = false;
-    }
-  }
-
-  _record(bytes) {
-    this.state.metrics.requests += 1;
-    this.state.metrics.bytes += bytes;
-  }
-
-  _maybeFirstUpdate(progressPayload) {
-    if (this.state.metrics.firstUpdateMs) {
-      return;
-    }
-    const current = progressPayload?.progress?.current ?? 0;
-    const state = progressPayload?.state ?? "";
-    if (state === "RUNNING" && current > 0) {
-      this.state.metrics.firstUpdateMs = performance.now() - this.startTime;
-    }
+  const current = progressPayload?.progress?.current ?? 0;
+  const runState = progressPayload?.state ?? "";
+  if (runState === "RUNNING" && current > 0 && startTime !== undefined) {
+    state.metrics.firstUpdateMs = performance.now() - startTime;
   }
 }
 
@@ -230,15 +54,69 @@ class RunController {
     state.runStatus = "starting";
     render(state);
     try {
-      const taskId = await this.apiClient.startPi(digits);
-      await this.apiClient.startNaivePi(digits, taskId);
+      const taskRes = await this.apiClient.startTask(digits);
+      if (!taskRes.ok) {
+        throw new Error(`Failed to start task (${taskRes.status})`);
+      }
+      const taskId = taskRes.data?.id;
+      const naiveRes = await this.apiClient.startNaiveTask(digits, taskId);
+      if (!naiveRes.ok) {
+        throw new Error(`Failed to start naive task (${naiveRes.status})`);
+      }
       state.taskId = taskId;
       state.runStatus = "running";
       this.streamingEngines = state.streaming.clients.map(
-        (client) => new StreamingEngine(taskId, this.wsClient, client)
+        (client) =>
+          new StreamingEngine({
+            taskId,
+            wsClient: this.wsClient,
+            state: client,
+            onResultChunk: (payload, clientState) => {
+              const payloadData = payload?.data;
+              if (Array.isArray(payloadData)) {
+                if (payloadData.length) {
+                  clientState.result += payloadData.join("");
+                }
+              } else if (typeof payloadData === "string" && payloadData) {
+                clientState.result += payloadData;
+              }
+            },
+          })
       );
       this.pollingEngines = state.polling.clients.map(
-        (client) => new PollingEngine(taskId, this.apiClient, client, pollInterval)
+        (client) => {
+          const engine = new PollingEngine({
+            taskId,
+            api: this.apiClient,
+            state: client,
+            intervalMs: pollInterval,
+            onStatus: (data, clientState) => {
+              applyNaiveStatus(clientState, data);
+              maybeFirstUpdate(clientState, data, engine.startTime);
+            },
+            onResult: (data, clientState) => {
+              const payload = data.partial_result ?? "";
+              clientState.result =
+                typeof payload === "string" ? payload : JSON.stringify(payload);
+              const meta = data.metadata;
+              if (meta?.server_cpu_ms_naive !== undefined) {
+                clientState.metrics.serverCpuMs = meta.server_cpu_ms_naive;
+              }
+            },
+            shouldStop: ({ phase, statusRes, resultRes, state: clientState }) => {
+              if (phase === "status") {
+                if (statusRes?.status === 404) return true;
+                if (TERMINAL_STATES.has(clientState.status)) return true;
+              }
+              if (phase === "result") {
+                if (resultRes?.status === 404) return true;
+                if (resultRes?.ok && resultRes.data?.done === true) return true;
+              }
+              return false;
+            },
+          });
+          return engine;
+        }
       );
       this.streamingEngines.forEach((engine) => engine.start());
       this.pollingEngines.forEach((engine) => engine.start());
@@ -313,7 +191,19 @@ const state = {
   polling: createModeState(CLIENT_COUNT),
 };
 
-const apiClient = new ApiClient();
+const apiClient = new ApiClient({
+  startTask: (digits) => postJson(`${API_BASE}/calculate_pi`, { n: digits }),
+  startNaiveTask: (digits, taskId) =>
+    postJson(`${API_BASE}/naive/calculate_pi`, {
+      digits,
+      task_id: taskId,
+      demo: true,
+    }),
+  getStatus: (taskId) =>
+    getJson(`${API_BASE}/naive/check_progress?task_id=${encodeURIComponent(taskId)}`),
+  getResult: (taskId) =>
+    getJson(`${API_BASE}/naive/task_result?task_id=${encodeURIComponent(taskId)}`),
+});
 const wsClient = new WsClient(WS_BASE);
 const controller = new RunController(apiClient, wsClient);
 
