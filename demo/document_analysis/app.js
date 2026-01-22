@@ -1,3 +1,6 @@
+import { API_BASE, WS_BASE, getJson, postJson, WsClient } from "../shared/transport.js";
+import { formatMs, formatSec, formatBytes, recordLatency } from "../shared/engine.js";
+
 const UI = {
   runButton: document.getElementById("run"),
   runStatus: document.getElementById("run-status"),
@@ -19,17 +22,6 @@ const UI = {
     result: document.getElementById("polling-result"),
     summary: document.getElementById("polling-summary"),
   },
-};
-
-const API_BASE = "/api";
-const WS_BASE = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}`;
-
-const formatMs = (ms) => `${Math.round(ms)} ms`;
-const formatSec = (ms) => `${(ms / 1000).toFixed(2)} s`;
-const formatBytes = (bytes) => {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 };
 
 function log(level, message, data) {
@@ -59,44 +51,35 @@ window.addEventListener("unhandledrejection", (event) => {
 
 class ApiClient {
   async startDocumentAnalysis(documentPath, documentUrl, keywords) {
-    const res = await fetch(`${API_BASE}/tasks/document-analysis`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        document_path: documentPath,
-        document_url: documentUrl,
-        keywords,
-      }),
+    const res = await postJson(`${API_BASE}/tasks/document-analysis`, {
+      document_path: documentPath,
+      document_url: documentUrl,
+      keywords,
     });
     if (!res.ok) {
       throw new Error(`Failed to start document analysis (${res.status})`);
     }
-    const data = await res.json();
-    return data.id;
+    return res.data?.id;
   }
 
   async startNaiveDocumentAnalysis(taskId, documentPath, documentUrl, keywords, demo = false) {
-    const res = await fetch(`${API_BASE}/naive/document-analysis`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        task_id: taskId,
-        document_path: documentPath,
-        document_url: documentUrl,
-        keywords,
-        demo,
-      }),
+    const res = await postJson(`${API_BASE}/naive/document-analysis`, {
+      task_id: taskId,
+      document_path: documentPath,
+      document_url: documentUrl,
+      keywords,
+      demo,
     });
     if (!res.ok) {
       throw new Error(`Failed to start naive document analysis (${res.status})`);
     }
-    const data = await res.json();
-    return data.task_id;
+    return res.data?.task_id;
   }
 
   async getNaiveStatus(taskId) {
-    return this._getJson(
-      `${API_BASE}/naive/document-analysis/status?task_id=${encodeURIComponent(taskId)}`
+    return getJson(
+      `${API_BASE}/naive/document-analysis/status?task_id=${encodeURIComponent(taskId)}`,
+      { onError: (info) => log("error", "HTTP request failed", info) }
     );
   }
 
@@ -106,55 +89,7 @@ class ApiClient {
     if (afterId !== null && afterId !== undefined) {
       url.searchParams.set("after", String(afterId));
     }
-    return this._getJson(url.toString());
-  }
-
-  async _getJson(url) {
-    const start = performance.now();
-    try {
-      const res = await fetch(url);
-      const text = await res.text();
-      const bytes = text.length;
-      let data = null;
-      if (text) {
-        try {
-          data = JSON.parse(text);
-        } catch {
-          data = null;
-        }
-      }
-      const elapsedMs = performance.now() - start;
-      return { ok: res.ok, status: res.status, data, bytes, elapsedMs };
-    } catch (error) {
-      const elapsedMs = performance.now() - start;
-      log("error", "HTTP request failed", { url, error: String(error) });
-      return { ok: false, status: 0, data: null, bytes: 0, elapsedMs, error: String(error) };
-    }
-  }
-}
-
-class WsClient {
-  constructor(base) {
-    this.base = base;
-  }
-
-  connect(taskId, onMessage) {
-    const ws = new WebSocket(`${this.base}/ws/tasks/${taskId}`);
-    const keepalive = setInterval(() => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send("ping");
-      }
-    }, 1000);
-    ws.addEventListener("open", () => log("info", "WS connected", { taskId }));
-    ws.addEventListener("message", (event) => onMessage(event.data));
-    ws.addEventListener("error", () => log("error", "WS error", { taskId }));
-    ws.addEventListener("close", () => {
-      clearInterval(keepalive);
-      log("info", "WS closed", { taskId });
-    });
-    return {
-      close: () => ws.close(),
-    };
+    return getJson(url.toString(), { onError: (info) => log("error", "HTTP request failed", info) });
   }
 }
 
@@ -190,7 +125,13 @@ class StreamingEngine {
   }
 
   start() {
-    this.socket = this.wsClient.connect(this.taskId, (data) => this._handleMessage(data));
+    this.socket = this.wsClient.connect({
+      taskId: this.taskId,
+      onMessage: (data) => this._handleMessage(data),
+      onOpen: () => log("info", "WS connected", { taskId: this.taskId }),
+      onError: () => log("error", "WS error", { taskId: this.taskId }),
+      onClose: () => log("info", "WS closed", { taskId: this.taskId }),
+    });
   }
 
   stop() {
@@ -293,10 +234,8 @@ class PollingEngine {
     try {
       const statusRes = await this.apiClient.getNaiveStatus(this.taskId);
       this._record(statusRes.bytes);
-      if (statusRes.elapsedMs !== undefined) {
-        this.state.metrics.latencyTotalMs += statusRes.elapsedMs;
-        this.state.metrics.latencyCount += 1;
-      } else if (statusRes.status === 404) {
+      recordLatency(this.state.metrics, statusRes.elapsedMs);
+      if (statusRes.status === 404) {
         this.state.completed = true;
         this.state.metrics.totalMs = performance.now() - this.startTime;
         this.stop();
@@ -313,12 +252,6 @@ class PollingEngine {
           this.state.metrics.serverCpuMs = meta.server_cpu_ms_naive;
         }
         this._maybeFirstUpdate(progress, statusRes.data.metrics);
-      } else if (snippetRes.status === 404) {
-        this.state.completed = true;
-        this.state.metrics.totalMs = performance.now() - this.startTime;
-        this.stop();
-        this.onUpdate();
-        return;
       }
 
       const snippetRes = await this.apiClient.getNaiveSnippets(
@@ -326,9 +259,13 @@ class PollingEngine {
         this.state.lastSnippetId
       );
       this._record(snippetRes.bytes);
-      if (snippetRes.elapsedMs !== undefined) {
-        this.state.metrics.latencyTotalMs += snippetRes.elapsedMs;
-        this.state.metrics.latencyCount += 1;
+      recordLatency(this.state.metrics, snippetRes.elapsedMs);
+      if (snippetRes.status === 404) {
+        this.state.completed = true;
+        this.state.metrics.totalMs = performance.now() - this.startTime;
+        this.stop();
+        this.onUpdate();
+        return;
       }
       if (snippetRes.ok && snippetRes.data) {
         const snippets = snippetRes.data.snippets ?? [];

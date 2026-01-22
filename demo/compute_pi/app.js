@@ -1,3 +1,6 @@
+import { API_BASE, WS_BASE, getJson, postJson, WsClient } from "../shared/transport.js";
+import { formatMs, formatSec, formatBytes, recordLatency } from "../shared/engine.js";
+
 const UI = {
   runButton: document.getElementById("run"),
   runStatus: document.getElementById("run-status"),
@@ -13,17 +16,7 @@ const UI = {
   },
 };
 
-const API_BASE = "/api";
-const WS_BASE = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}`;
 const CLIENT_COUNT = 5;
-
-const formatMs = (ms) => `${Math.round(ms)} ms`;
-const formatSec = (ms) => `${(ms / 1000).toFixed(2)} s`;
-const formatBytes = (bytes) => {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
-};
 
 if (!UI.runButton || !UI.streaming.clients || !UI.polling.clients) {
   throw new Error("Missing UI elements; check HTML/JS version mismatch.");
@@ -31,83 +24,33 @@ if (!UI.runButton || !UI.streaming.clients || !UI.polling.clients) {
 
 class ApiClient {
   async startPi(digits) {
-    const res = await fetch(`${API_BASE}/calculate_pi`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ n: digits }),
-    });
+    const res = await postJson(`${API_BASE}/calculate_pi`, { n: digits });
     if (!res.ok) {
       throw new Error(`Failed to start task (${res.status})`);
     }
-    const data = await res.json();
-    return data.id;
+    return res.data?.id;
   }
 
   async startNaivePi(digits, taskId) {
-    const res = await fetch(`${API_BASE}/naive/calculate_pi`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ digits, task_id: taskId, demo: true }),
+    const res = await postJson(`${API_BASE}/naive/calculate_pi`, {
+      digits,
+      task_id: taskId,
+      demo: true,
     });
     if (!res.ok) {
       throw new Error(`Failed to start naive task (${res.status})`);
     }
-    const data = await res.json();
-    return data.task_id;
+    return res.data?.task_id;
   }
 
   async getNaiveProgress(taskId) {
-    return this._getJson(
+    return getJson(
       `${API_BASE}/naive/check_progress?task_id=${encodeURIComponent(taskId)}`
     );
   }
 
   async getNaiveResult(taskId) {
-    return this._getJson(`${API_BASE}/naive/task_result?task_id=${encodeURIComponent(taskId)}`);
-  }
-
-  async _getJson(url) {
-    const start = performance.now();
-    try {
-      const res = await fetch(url);
-      const text = await res.text();
-      const bytes = text.length;
-      let data = null;
-      if (text) {
-        try {
-          data = JSON.parse(text);
-        } catch {
-          data = null;
-        }
-      }
-      const elapsedMs = performance.now() - start;
-      return { ok: res.ok, status: res.status, data, bytes, elapsedMs };
-    } catch (error) {
-      const elapsedMs = performance.now() - start;
-      return { ok: false, status: 0, data: null, bytes: 0, elapsedMs, error: String(error) };
-    }
-  }
-}
-
-class WsClient {
-  constructor(base) {
-    this.base = base;
-  }
-
-  connect(taskId, clientId, onMessage) {
-    const ws = new WebSocket(`${this.base}/ws/tasks/${taskId}`);
-    const keepalive = setInterval(() => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send("ping");
-      }
-    }, 1000);
-    ws.addEventListener("message", (event) => onMessage(event.data));
-    ws.addEventListener("close", () => {
-      clearInterval(keepalive);
-    });
-    return {
-      close: () => ws.close(),
-    };
+    return getJson(`${API_BASE}/naive/task_result?task_id=${encodeURIComponent(taskId)}`);
   }
 }
 
@@ -121,11 +64,10 @@ class StreamingEngine {
   }
 
   start() {
-    this.socket = this.wsClient.connect(
-      this.taskId,
-      this.state.id,
-      (data) => this._handleMessage(data)
-    );
+    this.socket = this.wsClient.connect({
+      taskId: this.taskId,
+      onMessage: (data) => this._handleMessage(data),
+    });
   }
 
   stop() {
@@ -208,10 +150,7 @@ class PollingEngine {
     try {
       const progressRes = await this.apiClient.getNaiveProgress(this.taskId);
       this._record(progressRes.bytes);
-      if (progressRes.elapsedMs !== undefined) {
-        this.state.metrics.latencyTotalMs += progressRes.elapsedMs;
-        this.state.metrics.latencyCount += 1;
-      }
+      recordLatency(this.state.metrics, progressRes.elapsedMs);
       if (progressRes.ok && progressRes.data) {
         const progress = progressRes.data.progress?.percentage ?? 0;
         this.state.progress = progress;
@@ -237,10 +176,7 @@ class PollingEngine {
 
       const resultRes = await this.apiClient.getNaiveResult(this.taskId);
       this._record(resultRes.bytes);
-      if (resultRes.elapsedMs !== undefined) {
-        this.state.metrics.latencyTotalMs += resultRes.elapsedMs;
-        this.state.metrics.latencyCount += 1;
-      }
+      recordLatency(this.state.metrics, resultRes.elapsedMs);
       if (resultRes.ok && resultRes.data) {
         const payload = resultRes.data.partial_result ?? "";
         this.state.result = typeof payload === "string" ? payload : JSON.stringify(payload);
@@ -293,9 +229,6 @@ class RunController {
     this._resetState(state);
     state.runStatus = "starting";
     render(state);
-    if (UI.logOutput) {
-      UI.logOutput.textContent = "";
-    }
     try {
       const taskId = await this.apiClient.startPi(digits);
       await this.apiClient.startNaivePi(digits, taskId);
