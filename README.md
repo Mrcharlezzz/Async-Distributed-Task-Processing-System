@@ -20,7 +20,10 @@ Tasks are dispatched asynchronously via Celery, progress and partial results are
 
 The project is designed to **demonstrate architectural tradeoffs and performance characteristics** of queue-based systems and delivery models, rather than to solve a domain-specific business problem.
 
----
+📺 **Demo Video**
+
+A short demo video is available [HERE](https://youtu.be/VIDEO_LINK)
+
 
 ## Event-Driven Application Workflow (Sequence Diagram)
 
