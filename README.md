@@ -18,8 +18,6 @@ This project provides an **event-driven** implementation of a **web–queue–wo
 
 Tasks are dispatched asynchronously via Celery, progress and partial results are emitted as events through Redis Streams, and updates are delivered to clients using WebSockets. Authoritative task state and final results are persisted in PostgreSQL to support durability and reconnection.
 
-The project is designed to **demonstrate architectural tradeoffs and performance characteristics** of queue-based systems and delivery models, rather than to solve a domain-specific business problem.
-
 📺 **Demo Video**
 
 A short demo video is available [HERE](https://youtu.be/BhRv2RDzMSA)
